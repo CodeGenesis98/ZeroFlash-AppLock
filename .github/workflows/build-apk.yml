@@ -10,104 +10,76 @@ permissions:
 
 jobs:
   build-apk:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout Source Code
         uses: actions/checkout@v4
 
-      - name: Set up Python & Pillow for HD Wallpaper Generation
+      - name: Generate Android Project & 4 HD Wallpapers (Zero-Dependency Python)
         run: |
-          pip install --quiet Pillow
           python3 - << 'PYEOF'
-          import os, math, random
-          from PIL import Image, ImageDraw, ImageFilter
+          import os, struct, zlib
 
           os.makedirs("app/src/main/res/drawable-nodpi", exist_ok=True)
           os.makedirs("app/src/main/res/xml", exist_ok=True)
           os.makedirs("app/src/main/res/values", exist_ok=True)
           os.makedirs("app/src/main/res/values-fa", exist_ok=True)
-          os.makedirs("app/src/main/java/io/zenzy/zeroflash/applock/theme", exist_ok=True)
-          os.makedirs("app/src/main/java/io/zenzy/zeroflash/applock/data", exist_ok=True)
-          os.makedirs("app/src/main/java/io/zenzy/zeroflash/applock/overlay", exist_ok=True)
-          os.makedirs("app/src/main/java/io/zenzy/zeroflash/applock/service", exist_ok=True)
-          os.makedirs("app/src/main/java/io/zenzy/zeroflash/applock/security", exist_ok=True)
-          os.makedirs("app/src/main/java/io/zenzy/zeroflash/applock/receiver", exist_ok=True)
-          os.makedirs("app/src/main/java/io/zenzy/zeroflash/applock/ui", exist_ok=True)
+          os.makedirs("app/src/main/java/io/zenzy/zeroflash/applock", exist_ok=True)
 
-          def create_wallpaper(path, top_c, mid_c, bot_c, glow_c, style):
-              W, H = 720, 1280
-              img = Image.new("RGB", (W, H))
-              draw = ImageDraw.Draw(img)
-              for y in range(H):
-                  t = y / float(H - 1)
+          def make_atmospheric_png(path, top_rgb, mid_rgb, bot_rgb, glow_rgb, w=540, h=960):
+              raw = bytearray()
+              cx, cy = w // 2, int(h * 0.38)
+              max_r = float(w * 0.55)
+              for y in range(h):
+                  raw.append(0)
+                  t = y / float(h - 1)
                   if t < 0.55:
                       u = t / 0.55
-                      r = int(top_c[0]*(1-u) + mid_c[0]*u)
-                      g = int(top_c[1]*(1-u) + mid_c[1]*u)
-                      b = int(top_c[2]*(1-u) + mid_c[2]*u)
+                      br = int(top_rgb[0] * (1 - u) + mid_rgb[0] * u)
+                      bg = int(top_rgb[1] * (1 - u) + mid_rgb[1] * u)
+                      bb = int(top_rgb[2] * (1 - u) + mid_rgb[2] * u)
                   else:
                       u = (t - 0.55) / 0.45
-                      r = int(mid_c[0]*(1-u) + bot_c[0]*u)
-                      g = int(mid_c[1]*(1-u) + bot_c[1]*u)
-                      b = int(mid_c[2]*(1-u) + bot_c[2]*u)
-                  draw.line([(0, y), (W, y)], fill=(r, g, b))
+                      br = int(mid_rgb[0] * (1 - u) + bot_rgb[0] * u)
+                      bg = int(mid_rgb[1] * (1 - u) + bot_rgb[1] * u)
+                      bb = int(mid_rgb[2] * (1 - u) + bot_rgb[2] * u)
+                  dy2 = (y - cy) * (y - cy)
+                  row_bytes = bytearray(w * 3)
+                  idx = 0
+                  for x in range(w):
+                      dx = x - cx
+                      dist = (dx * dx + dy2) ** 0.5
+                      if dist < max_r:
+                          g_factor = (1.0 - dist / max_r) * 0.28
+                          r = min(255, int(br * (1 - g_factor) + glow_rgb[0] * g_factor))
+                          g = min(255, int(bg * (1 - g_factor) + glow_rgb[1] * g_factor))
+                          b = min(255, int(bb * (1 - g_factor) + glow_rgb[2] * g_factor))
+                      else:
+                          r, g, b = br, bg, bb
+                      row_bytes[idx] = r
+                      row_bytes[idx + 1] = g
+                      row_bytes[idx + 2] = b
+                      idx += 3
+                  raw.extend(row_bytes)
 
-              overlay = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-              odraw = ImageDraw.Draw(overlay)
-              random.seed(style)
+              def png_chunk(tag, data):
+                  return struct.pack("!I", len(data)) + tag + data + struct.pack("!I", zlib.crc32(tag + data) & 0xffffffff)
 
-              if style == "forest":
-                  # Calm layered misty pine silhouettes & soft fog
-                  for layer, base_y, col in [(0, 620, (22, 44, 38, 150)), (1, 780, (14, 30, 25, 200)), (2, 940, (8, 18, 15, 240))]:
-                      for tx in range(-40, W + 60, 75):
-                          th = random.randint(180, 320)
-                          top_y = base_y - th
-                          for branch in range(6):
-                              by = top_y + branch * (th // 6)
-                              bw = 18 + branch * 14
-                              odraw.polygon([(tx, by - 28), (tx - bw, by + 24), (tx + bw, by + 24)], fill=col)
-                  odraw.rectangle([0, 520, W, 820], fill=(210, 230, 225, 38))
-              elif style == "cafe":
-                  # Warm walnut wood table & soft amber bokeh lights
-                  for _ in range(14):
-                      bx = random.randint(60, W - 60)
-                      by = random.randint(120, 680)
-                      br = random.randint(28, 75)
-                      odraw.ellipse([bx - br, by - br, bx + br, by + br], fill=(glow_c[0], glow_c[1], glow_c[2], 48))
-                  odraw.rectangle([0, 860, W, H], fill=(42, 24, 14, 215))
-                  for plank in range(860, H, 36):
-                      odraw.line([(0, plank), (W, plank)], fill=(24, 13, 7, 140), width=2)
-              elif style == "witcher":
-                  # Mountain fortress silhouette & glowing Igni runes
-                  pts = [(0, 760), (140, 580), (260, 630), (390, 440), (430, 440), (460, 380), (500, 380), (520, 460), (620, 540), (W, 720), (W, H), (0, H)]
-                  odraw.polygon(pts, fill=(12, 15, 22, 220))
-                  for _ in range(28):
-                      ex = random.randint(100, W - 100)
-                      ey = random.randint(450, 980)
-                      er = random.randint(4, 10)
-                      odraw.ellipse([ex - er, ey - er, ex + er, ey + er], fill=(251, 146, 60, 140))
-              elif style == "lotr":
-                  # Elven valley cliffs, misty waterfall & golden lanterns
-                  odraw.polygon([(0, 320), (220, 480), (260, 950), (0, H)], fill=(18, 16, 28, 210))
-                  odraw.polygon([(W, 280), (480, 460), (440, 950), (W, H)], fill=(18, 16, 28, 210))
-                  odraw.rectangle([310, 460, 390, 940], fill=(220, 230, 255, 42))
-                  for lx, ly in [(180, 740), (350, 710), (520, 740)]:
-                      odraw.ellipse([lx - 26, ly - 26, lx + 26, ly + 26], fill=(250, 204, 21, 95))
+              ihdr = struct.pack("!IIBBBBB", w, h, 8, 2, 0, 0, 0)
+              png_data = b"\x89PNG\r\n\x1a\n" + png_chunk(b"IHDR", ihdr) + png_chunk(b"IDAT", zlib.compress(bytes(raw), 6)) + png_chunk(b"IEND", b"")
+              with open(path, "wb") as f:
+                  f.write(png_data)
 
-              overlay = overlay.filter(ImageFilter.GaussianBlur(radius=6))
-              final_img = Image.alpha_composite(img.convert("RGBA"), overlay).convert("RGB")
-              final_img.save(path, format="JPEG", quality=85, optimize=True)
+          make_atmospheric_png("app/src/main/res/drawable-nodpi/bg_misty_forest.png", (42, 68, 60), (20, 40, 34), (7, 16, 13), (110, 231, 183))
+          make_atmospheric_png("app/src/main/res/drawable-nodpi/bg_cozy_wood_cafe.png", (52, 32, 20), (38, 22, 14), (16, 9, 5), (251, 191, 36))
+          make_atmospheric_png("app/src/main/res/drawable-nodpi/bg_witcher_wilderness.png", (32, 40, 54), (18, 23, 34), (8, 10, 16), (251, 146, 60))
+          make_atmospheric_png("app/src/main/res/drawable-nodpi/bg_lotr_rivendell.png", (48, 38, 66), (26, 22, 40), (11, 9, 18), (250, 204, 21))
 
-          create_wallpaper("app/src/main/res/drawable-nodpi/bg_misty_forest.jpg", (54, 78, 72), (24, 46, 40), (8, 18, 15), (110, 231, 183), "forest")
-          create_wallpaper("app/src/main/res/drawable-nodpi/bg_cozy_wood_cafe.jpg", (48, 30, 20), (68, 42, 26), (22, 12, 8), (251, 191, 36), "cafe")
-          create_wallpaper("app/src/main/res/drawable-nodpi/bg_witcher_wilderness.jpg", (34, 42, 56), (20, 25, 36), (9, 11, 16), (251, 146, 60), "witcher")
-          create_wallpaper("app/src/main/res/drawable-nodpi/bg_lotr_rivendell.jpg", (58, 46, 74), (32, 28, 48), (12, 10, 20), (250, 204, 21), "lotr")
-
-          def write_clean(path, content):
+          def write_clean(path, text):
               with open(path, "w", encoding="utf-8") as f:
-                  f.write(content.strip() + "\n")
+                  f.write(text.strip() + "\n")
 
-          write_clean("settings.gradle.kts", '''
+          write_clean("settings.gradle.kts", r'''
           pluginManagement {
               repositories {
                   google()
@@ -126,21 +98,21 @@ jobs:
           include(":app")
           ''')
 
-          write_clean("build.gradle.kts", '''
+          write_clean("build.gradle.kts", r'''
           plugins {
               id("com.android.application") version "8.5.0" apply false
               id("org.jetbrains.kotlin.android") version "1.9.24" apply false
           }
           ''')
 
-          write_clean("gradle.properties", '''
+          write_clean("gradle.properties", r'''
           org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
           android.useAndroidX=true
           kotlin.code.style=official
           android.nonTransitiveRClass=true
           ''')
 
-          write_clean("app/build.gradle.kts", '''
+          write_clean("app/build.gradle.kts", r'''
           plugins {
               id("com.android.application")
               id("org.jetbrains.kotlin.android")
@@ -154,8 +126,8 @@ jobs:
                   applicationId = "io.zenzy.zeroflash.applock"
                   minSdk = 26
                   targetSdk = 34
-                  versionCode = 3
-                  versionName = "3.1.0-OneUI9"
+                  versionCode = 4
+                  versionName = "3.2.0-OneUI9"
                   vectorDrawables { useSupportLibrary = true }
               }
 
@@ -171,26 +143,16 @@ jobs:
           dependencies {
               implementation("androidx.core:core-ktx:1.13.1")
               implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.2")
-              implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.2")
-              implementation("androidx.lifecycle:lifecycle-service:2.8.2")
-              implementation("androidx.savedstate:savedstate-ktx:1.2.1")
               implementation("androidx.activity:activity-compose:1.9.0")
               implementation(platform("androidx.compose:compose-bom:2024.06.00"))
               implementation("androidx.compose.ui:ui")
               implementation("androidx.compose.ui:ui-graphics")
               implementation("androidx.compose.animation:animation")
               implementation("androidx.compose.material3:material3")
-              implementation("androidx.biometric:biometric:1.2.0-alpha05")
-
-              val cameraxVersion = "1.3.4"
-              implementation("androidx.camera:camera-core:$cameraxVersion")
-              implementation("androidx.camera:camera-camera2:$cameraxVersion")
-              implementation("androidx.camera:camera-lifecycle:$cameraxVersion")
-              implementation("com.google.guava:guava:32.1.3-android")
           }
           ''')
 
-          write_clean("app/src/main/res/values/strings.xml", '''
+          write_clean("app/src/main/res/values/strings.xml", r'''
           <?xml version="1.0" encoding="utf-8"?>
           <resources>
               <string name="app_name">ZeroFlash One UI 9</string>
@@ -202,7 +164,7 @@ jobs:
           </resources>
           ''')
 
-          write_clean("app/src/main/res/values-fa/strings.xml", '''
+          write_clean("app/src/main/res/values-fa/strings.xml", r'''
           <?xml version="1.0" encoding="utf-8"?>
           <resources>
               <string name="app_name">ZeroFlash One UI 9</string>
@@ -214,7 +176,7 @@ jobs:
           </resources>
           ''')
 
-          write_clean("app/src/main/res/xml/accessibility_service_config.xml", '''
+          write_clean("app/src/main/res/xml/accessibility_service_config.xml", r'''
           <?xml version="1.0" encoding="utf-8"?>
           <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
               android:accessibilityEventTypes="typeWindowStateChanged|typeWindowsChanged"
@@ -225,7 +187,7 @@ jobs:
               android:description="@string/accessibility_service_desc" />
           ''')
 
-          write_clean("app/src/main/res/xml/device_admin_receiver.xml", '''
+          write_clean("app/src/main/res/xml/device_admin_receiver.xml", r'''
           <?xml version="1.0" encoding="utf-8"?>
           <device-admin xmlns:android="http://schemas.android.com/apk/res/android">
               <uses-policies>
@@ -234,7 +196,7 @@ jobs:
           </device-admin>
           ''')
 
-          write_clean("app/src/main/AndroidManifest.xml", '''
+          write_clean("app/src/main/AndroidManifest.xml", r'''
           <?xml version="1.0" encoding="utf-8"?>
           <manifest xmlns:android="http://schemas.android.com/apk/res/android"
               xmlns:tools="http://schemas.android.com/tools">
@@ -246,9 +208,6 @@ jobs:
               <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
               <uses-permission android:name="android.permission.USE_BIOMETRIC" />
               <uses-permission android:name="android.permission.VIBRATE" />
-              <uses-permission android:name="android.permission.CAMERA" />
-              <uses-feature android:name="android.hardware.camera.front" android:required="false" />
-              <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
 
               <application
                   android:allowBackup="false"
@@ -257,7 +216,7 @@ jobs:
                   android:theme="@android:style/Theme.DeviceDefault.DayNight">
 
                   <activity
-                      android:name=".ui.MainActivity"
+                      android:name=".MainActivity"
                       android:exported="true"
                       android:configChanges="uiMode|locale|layoutDirection|orientation|screenSize"
                       android:launchMode="singleTop"
@@ -266,7 +225,7 @@ jobs:
 
                   <activity-alias
                       android:name=".DefaultLauncherAlias"
-                      android:targetActivity=".ui.MainActivity"
+                      android:targetActivity=".MainActivity"
                       android:enabled="true"
                       android:exported="true"
                       android:label="@string/app_name">
@@ -278,7 +237,7 @@ jobs:
 
                   <activity-alias
                       android:name=".CalculatorStealthAlias"
-                      android:targetActivity=".ui.MainActivity"
+                      android:targetActivity=".MainActivity"
                       android:enabled="false"
                       android:exported="true"
                       android:label="@string/calculator_alias_name">
@@ -289,7 +248,7 @@ jobs:
                   </activity-alias>
 
                   <service
-                      android:name=".service.ZeroFlashAccessibilityService"
+                      android:name=".ZeroFlashAccessibilityService"
                       android:exported="true"
                       android:label="@string/accessibility_service_label"
                       android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
@@ -302,16 +261,7 @@ jobs:
                   </service>
 
                   <service
-                      android:name=".service.WatchdogForegroundService"
-                      android:exported="false"
-                      android:foregroundServiceType="specialUse">
-                      <property
-                          android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                          android:value="AppLock continuous security enforcement" />
-                  </service>
-
-                  <service
-                      android:name=".service.NotificationShieldService"
+                      android:name=".NotificationShieldService"
                       android:exported="true"
                       android:label="ZeroFlash Notification Shield"
                       android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
@@ -321,7 +271,7 @@ jobs:
                   </service>
 
                   <receiver
-                      android:name=".receiver.UninstallProtectionAdminReceiver"
+                      android:name=".UninstallProtectionAdminReceiver"
                       android:description="@string/device_admin_desc"
                       android:exported="true"
                       android:label="@string/device_admin_label"
@@ -334,32 +284,91 @@ jobs:
                           <action android:name="android.app.action.DEVICE_ADMIN_DISABLE_REQUESTED" />
                       </intent-filter>
                   </receiver>
-
-                  <receiver
-                      android:name=".receiver.BootCompletedReceiver"
-                      android:exported="true"
-                      android:directBootAware="true">
-                      <intent-filter>
-                          <action android:name="android.intent.action.BOOT_COMPLETED" />
-                          <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
-                      </intent-filter>
-                  </receiver>
               </application>
           </manifest>
           ''')
 
-          write_clean("app/src/main/java/io/zenzy/zeroflash/applock/theme/OneUiDynamicThemeEngine.kt", '''
-          package io.zenzy.zeroflash.applock.theme
+          write_clean("app/src/main/java/io/zenzy/zeroflash/applock/ZeroFlashOneUi9App.kt", r'''
+          package io.zenzy.zeroflash.applock
 
+          import android.accessibilityservice.AccessibilityService
+          import android.app.Notification
+          import android.app.admin.DeviceAdminReceiver
+          import android.content.BroadcastReceiver
+          import android.content.ComponentName
+          import android.content.Context
+          import android.content.Intent
+          import android.content.IntentFilter
+          import android.content.SharedPreferences
+          import android.content.pm.ApplicationInfo
+          import android.content.pm.PackageManager
+          import android.graphics.Color as AndroidColor
+          import android.graphics.PixelFormat
+          import android.graphics.Typeface
+          import android.graphics.drawable.GradientDrawable
+          import android.hardware.Sensor
+          import android.hardware.SensorEvent
+          import android.hardware.SensorEventListener
+          import android.hardware.SensorManager
+          import android.net.Uri
+          import android.os.Build
+          import android.os.Bundle
+          import android.os.VibrationEffect
+          import android.os.Vibrator
+          import android.provider.Settings
+          import android.service.notification.NotificationListenerService
+          import android.service.notification.StatusBarNotification
+          import android.util.TypedValue
+          import android.view.Gravity
+          import android.view.View
+          import android.view.WindowManager
+          import android.view.accessibility.AccessibilityEvent
+          import android.widget.Button as AndroidButton
+          import android.widget.FrameLayout
+          import android.widget.GridLayout
+          import android.widget.ImageView
+          import android.widget.LinearLayout
+          import android.widget.TextView
+          import androidx.activity.ComponentActivity
+          import androidx.activity.compose.setContent
           import androidx.annotation.DrawableRes
+          import androidx.compose.animation.Crossfade
+          import androidx.compose.animation.core.tween
+          import androidx.compose.foundation.BorderStroke
+          import androidx.compose.foundation.ExperimentalFoundationApi
+          import androidx.compose.foundation.Image
+          import androidx.compose.foundation.background
+          import androidx.compose.foundation.border
+          import androidx.compose.foundation.clickable
+          import androidx.compose.foundation.combinedClickable
           import androidx.compose.foundation.isSystemInDarkTheme
-          import androidx.compose.material3.ColorScheme
-          import androidx.compose.material3.darkColorScheme
-          import androidx.compose.material3.lightColorScheme
-          import androidx.compose.runtime.Composable
+          import androidx.compose.foundation.layout.*
+          import androidx.compose.foundation.lazy.LazyColumn
+          import androidx.compose.foundation.lazy.LazyRow
+          import androidx.compose.foundation.lazy.items
+          import androidx.compose.foundation.shape.CircleShape
+          import androidx.compose.foundation.shape.RoundedCornerShape
+          import androidx.compose.material3.*
+          import androidx.compose.runtime.*
+          import androidx.compose.ui.Alignment
+          import androidx.compose.ui.Modifier
+          import androidx.compose.ui.draw.blur
+          import androidx.compose.ui.draw.clip
+          import androidx.compose.ui.graphics.Brush
           import androidx.compose.ui.graphics.Color
+          import androidx.compose.ui.layout.ContentScale
+          import androidx.compose.ui.platform.LocalLayoutDirection
+          import androidx.compose.ui.res.painterResource
+          import androidx.compose.ui.text.font.FontWeight
+          import androidx.compose.ui.text.style.TextAlign
           import androidx.compose.ui.unit.LayoutDirection
-          import io.zenzy.zeroflash.applock.R
+          import androidx.compose.ui.unit.dp
+          import androidx.compose.ui.unit.sp
+          import java.security.MessageDigest
+          import java.text.SimpleDateFormat
+          import java.util.Date
+          import java.util.Locale
+          import java.util.concurrent.ConcurrentHashMap
 
           enum class ThemeMode { SYSTEM, DARK, LIGHT }
 
@@ -368,63 +377,126 @@ jobs:
               EN("en", "English", LayoutDirection.Ltr)
           }
 
-          data class OneUiAdaptivePalette(
-              val isDark: Boolean,
-              val background: Color,
-              val cardSurface: Color,
-              val cardBorder: Color,
-              val primaryBlue: Color,
-              val primaryText: Color,
-              val secondaryText: Color,
-              val dividerColor: Color,
-              val pillBackground: Color
-          )
+          enum class WallpaperCategory(
+              val titleFa: String,
+              val titleEn: String,
+              val badgeFa: String,
+              val badgeEn: String,
+              @DrawableRes val resId: Int,
+              val accentHex: Int,
+              val glassHex: Int
+          ) {
+              MISTY_FOREST("جنگل مه‌آلود سپیده‌دم", "Misty Pine Forest", "🌲 طبیعت و جنگل مه‌آلود", "🌲 Misty Pine Forest", R.drawable.bg_misty_forest, 0xFF6EE7B7.toInt(), 0xCC11221C.toInt()),
+              COZY_WOOD_CAFE("کافی‌شاپ چوبی بارانی", "Cozy Wooden Cafe", "☕ کافی‌شاپ با تم چوبی", "☕ Cozy Wooden Cafe", R.drawable.bg_cozy_wood_cafe, 0xFFFBBF24.toInt(), 0xCC26170F.toInt()),
+              WITCHER_3("ویچر ۳ (کائر مورهن)", "The Witcher 3 (Kaer Morhen)", "⚔️ ویچر ۳ • کائر مورهن", "⚔️ The Witcher 3 • Kaer Morhen", R.drawable.bg_witcher_wilderness, 0xFFFB923C.toInt(), 0xCC151922.toInt()),
+              LORD_OF_THE_RINGS("ارباب حلقه‌ها (ریوندل)", "Lord of the Rings (Rivendell)", "💍 ارباب حلقه‌ها • ریوندل", "💍 Lord of the Rings • Rivendell", R.drawable.bg_lotr_rivendell, 0xFFFACC15.toInt(), 0xCC1A1726.toInt());
 
-          object OneUiSystemTheme {
-              private val DarkPalette = OneUiAdaptivePalette(
-                  isDark = true,
-                  background = Color(0xFF000000),
-                  cardSurface = Color(0xFF171A21),
-                  cardBorder = Color(0x26FFFFFF),
-                  primaryBlue = Color(0xFF387AFF),
-                  primaryText = Color(0xFFFFFFFF),
-                  secondaryText = Color(0xFF8E97A8),
-                  dividerColor = Color(0x1FFFFFFF),
-                  pillBackground = Color(0x29387AFF)
-              )
+              fun title(lang: AppLanguage): String = if (lang == AppLanguage.FA) titleFa else titleEn
+              fun badge(lang: AppLanguage): String = if (lang == AppLanguage.FA) badgeFa else badgeEn
+          }
 
-              private val LightPalette = OneUiAdaptivePalette(
-                  isDark = false,
-                  background = Color(0xFFF2F2F7),
-                  cardSurface = Color(0xFFFFFFFF),
-                  cardBorder = Color(0x14000000),
-                  primaryBlue = Color(0xFF0072DE),
-                  primaryText = Color(0xFF0D0F14),
-                  secondaryText = Color(0xFF636B78),
-                  dividerColor = Color(0x14000000),
-                  pillBackground = Color(0x1F0072DE)
-              )
+          object AppLockRepository {
+              private const val PREFS_NAME = "zeroflash_oneui9_prefs"
+              private val lockedPackagesRam = ConcurrentHashMap.newKeySet<String>()
+              private val unlockedSessionPackages = ConcurrentHashMap.newKeySet<String>()
+              private val enabledCategoriesRam = ConcurrentHashMap.newKeySet<WallpaperCategory>()
+              @Volatile private var lastThemeOrdinal = -1
+              @Volatile private var isInitialized = false
+              private lateinit var prefs: SharedPreferences
 
-              @Composable
-              fun resolvePalette(themeMode: ThemeMode): OneUiAdaptivePalette {
-                  val useDark = when (themeMode) {
-                      ThemeMode.SYSTEM -> isSystemInDarkTheme()
-                      ThemeMode.DARK -> true
-                      ThemeMode.LIGHT -> false
+              fun init(context: Context) {
+                  if (isInitialized) return
+                  prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                  lockedPackagesRam.addAll(prefs.getStringSet("locked_pkgs", emptySet()) ?: emptySet())
+                  val savedCats = prefs.getStringSet("enabled_cats", WallpaperCategory.entries.map { it.name }.toSet()) ?: emptySet()
+                  savedCats.forEach { name ->
+                      runCatching { WallpaperCategory.valueOf(name) }.getOrNull()?.let { enabledCategoriesRam.add(it) }
                   }
-                  return if (useDark) DarkPalette else LightPalette
+                  if (enabledCategoriesRam.isEmpty()) enabledCategoriesRam.addAll(WallpaperCategory.entries)
+                  if (prefs.getString("pin_hash", null) == null) setPin("1234")
+                  isInitialized = true
               }
 
-              fun toMaterialColorScheme(palette: OneUiAdaptivePalette): ColorScheme {
-                  return if (palette.isDark) {
-                      darkColorScheme(
-                          primary = palette.primaryBlue,
-                          background = palette.background,
-                          surface = palette.cardSurface,
-                          onPrimary = Color.White,
-                          onBackground = palette.primaryText,
-                          onSurface = palette.primaryText
-                      )
-                  } else {
-                      lightColorScheme(
-                          primary = palette.primaryBlue,
+              fun nextTheme(): WallpaperCategory {
+                  val pool = WallpaperCategory.entries.filter { enabledCategoriesRam.contains(it) }.ifEmpty { WallpaperCategory.entries }
+                  if (pool.size == 1) return pool.first()
+                  val candidates = pool.filter { it.ordinal != lastThemeOrdinal }.ifEmpty { pool }
+                  val picked = candidates.random()
+                  lastThemeOrdinal = picked.ordinal
+                  return picked
+              }
+
+              fun shouldIntercept(pkg: String, myPkg: String): Boolean {
+                  if (pkg == myPkg || pkg.contains("systemui") || pkg.contains("inputmethod")) return false
+                  if (!lockedPackagesRam.contains(pkg)) {
+                      unlockedSessionPackages.clear()
+                      return false
+                  }
+                  return !unlockedSessionPackages.contains(pkg)
+              }
+
+              fun markUnlocked(pkg: String) { unlockedSessionPackages.add(pkg) }
+              fun clearUnlocked() { unlockedSessionPackages.clear() }
+
+              fun togglePackageLock(pkg: String, locked: Boolean) {
+                  if (locked) lockedPackagesRam.add(pkg) else lockedPackagesRam.remove(pkg)
+                  prefs.edit().putStringSet("locked_pkgs", lockedPackagesRam.toSet()).apply()
+              }
+
+              fun getLockedPackages(): Set<String> = lockedPackagesRam.toSet()
+              fun getEnabledCategories(): Set<WallpaperCategory> = enabledCategoriesRam.toSet()
+
+              fun toggleCategory(cat: WallpaperCategory, enabled: Boolean) {
+                  if (enabled) enabledCategoriesRam.add(cat)
+                  else if (enabledCategoriesRam.size > 1) enabledCategoriesRam.remove(cat)
+                  prefs.edit().putStringSet("enabled_cats", enabledCategoriesRam.map { it.name }.toSet()).apply()
+              }
+
+              fun getThemeMode(): ThemeMode =
+                  runCatching { ThemeMode.valueOf(prefs.getString("theme_mode", ThemeMode.SYSTEM.name) ?: ThemeMode.SYSTEM.name) }.getOrDefault(ThemeMode.SYSTEM)
+              fun setThemeMode(m: ThemeMode) = prefs.edit().putString("theme_mode", m.name).apply()
+
+              fun getAppLanguage(): AppLanguage =
+                  runCatching { AppLanguage.valueOf(prefs.getString("app_lang", AppLanguage.FA.name) ?: AppLanguage.FA.name) }.getOrDefault(AppLanguage.FA)
+              fun setAppLanguage(l: AppLanguage) = prefs.edit().putString("app_lang", l.name).apply()
+
+              fun isRandomKeypadEnabled(): Boolean = prefs.getBoolean("random_keypad", true)
+              fun setRandomKeypadEnabled(v: Boolean) = prefs.edit().putBoolean("random_keypad", v).apply()
+
+              fun isFakeCrashEnabled(): Boolean = prefs.getBoolean("fake_crash", false)
+              fun setFakeCrashEnabled(v: Boolean) = prefs.edit().putBoolean("fake_crash", v).apply()
+
+              fun isPanicFlipEnabled(): Boolean = prefs.getBoolean("panic_flip", true)
+              fun setPanicFlipEnabled(v: Boolean) = prefs.edit().putBoolean("panic_flip", v).apply()
+
+              fun isStealthCalcEnabled(): Boolean = prefs.getBoolean("stealth_calc", false)
+              fun setStealthCalcEnabled(v: Boolean) = prefs.edit().putBoolean("stealth_calc", v).apply()
+
+              fun isHideNotifEnabled(): Boolean = prefs.getBoolean("hide_notif", true)
+              fun setHideNotifEnabled(v: Boolean) = prefs.edit().putBoolean("hide_notif", v).apply()
+
+              fun setPin(raw: String) = prefs.edit().putString("pin_hash", sha256(raw)).apply()
+              fun verifyPin(raw: String): Boolean = sha256(raw) == (prefs.getString("pin_hash", sha256("1234")) ?: sha256("1234"))
+
+              private fun sha256(input: String): String {
+                  val bytes = MessageDigest.getInstance("SHA-256").digest(("zeroflash_v1_" + input).toByteArray())
+                  return bytes.joinToString("") { "%02x".format(it) }
+              }
+          }
+
+          /**
+           * Ultra-Fast (<2ms) Hardware-Accelerated Native One UI 9 WindowManager Overlay.
+           * Uses native Android Views inside AccessibilityService so it attaches in <1 frame with zero overhead.
+           */
+          class ZeroFlashAccessibilityService : AccessibilityService(), SensorEventListener {
+              private lateinit var windowManager: WindowManager
+              private var rootOverlay: FrameLayout? = null
+              private var isAttached = false
+              private var currentTargetPkg = ""
+              private var enteredPin = ""
+              private var sensorManager: SensorManager? = null
+
+              private val layoutParams = WindowManager.LayoutParams(
+                  WindowManager.LayoutParams.MATCH_PARENT,
+                  WindowManager.LayoutParams.MATCH_PARENT,
+                  WindowManager.LayoutParams.TYPE_APPLICATION
