@@ -1,54 +1,742 @@
 name: Build ZeroFlash One UI 9 APK
-
 on:
   push:
     branches: [ "main", "master" ]
   workflow_dispatch:
-
 permissions:
   contents: write
-
 jobs:
   build-apk:
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout Source Code
         uses: actions/checkout@v4
-
-      - name: Extract Android Project & 4 Wallpapers
-        run: python3 -c "import base64,lzma,io,zipfile,subprocess; zipfile.ZipFile(io.BytesIO(lzma.decompress(base64.b64decode('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')))).extractall('.'); subprocess.run(['python3','gen_wp.py'],check=True); print('Project Ready!')"
-
+      - name: Generate Samsung Secure Folder Project
+        shell: python3 {0}
+        run: |
+          import os
+          def w(p, t):
+              d = os.path.dirname(p)
+              if d: os.makedirs(d, exist_ok=True)
+              open(p, "w", encoding="utf-8").write(t.strip() + "\n")
+          w("settings.gradle.kts", '''
+          pluginManagement {
+              repositories { google(); mavenCentral(); gradlePluginPortal() }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories { google(); mavenCentral() }
+          }
+          rootProject.name = "ZeroFlashSecureFolder"
+          include(":app")
+          ''')
+          w("build.gradle.kts", '''
+          plugins {
+              id("com.android.application") version "8.5.0" apply false
+              id("org.jetbrains.kotlin.android") version "1.9.24" apply false
+          }
+          ''')
+          w("gradle.properties", '''
+          org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+          android.useAndroidX=true
+          kotlin.code.style=official
+          android.nonTransitiveRClass=true
+          ''')
+          w("app/build.gradle.kts", '''
+          plugins {
+              id("com.android.application")
+              id("org.jetbrains.kotlin.android")
+          }
+          android {
+              namespace = "io.zenzy.zeroflash.applock"
+              compileSdk = 34
+              defaultConfig {
+                  applicationId = "io.zenzy.zeroflash.applock"
+                  minSdk = 26
+                  targetSdk = 34
+                  versionCode = 8
+                  versionName = "4.0-SecureFolder"
+              }
+              compileOptions {
+                  sourceCompatibility = JavaVersion.VERSION_17
+                  targetCompatibility = JavaVersion.VERSION_17
+              }
+              kotlinOptions { jvmTarget = "17" }
+              buildFeatures { compose = true }
+              composeOptions { kotlinCompilerExtensionVersion = "1.5.14" }
+          }
+          dependencies {
+              implementation("androidx.core:core-ktx:1.13.1")
+              implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.2")
+              implementation("androidx.activity:activity-compose:1.9.0")
+              implementation(platform("androidx.compose:compose-bom:2024.06.00"))
+              implementation("androidx.compose.ui:ui")
+              implementation("androidx.compose.ui:ui-graphics")
+              implementation("androidx.compose.material3:material3")
+          }
+          ''')
+          w("app/src/main/res/values/strings.xml", '''
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <string name="app_name">Secure Folder Lock</string>
+              <string name="accessibility_service_label">ZeroFlash Secure Folder Service</string>
+              <string name="accessibility_service_desc">Instant Samsung One UI 9 Secure Folder app lock interceptor.</string>
+          </resources>
+          ''')
+          w("app/src/main/res/values-fa/strings.xml", '''
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <string name="app_name">قفل پوشه امن</string>
+              <string name="accessibility_service_label">سرویس قفل آنی پوشه امن</string>
+              <string name="accessibility_service_desc">نمایش آنی صفحه قفل به سبک پوشه امن سامسونگ (One UI 9) قبل از باز شدن برنامه‌ها.</string>
+          </resources>
+          ''')
+          w("app/src/main/res/xml/accessibility_service_config.xml", '''
+          <?xml version="1.0" encoding="utf-8"?>
+          <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+              android:accessibilityEventTypes="typeWindowStateChanged|typeWindowsChanged"
+              android:accessibilityFeedbackType="feedbackGeneric"
+              android:accessibilityFlags="flagRetrieveInteractiveWindows|flagIncludeNotImportantViews"
+              android:canRetrieveWindowContent="false"
+              android:notificationTimeout="0"
+              android:description="@string/accessibility_service_desc" />
+          ''')
+          w("app/src/main/AndroidManifest.xml", '''
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+              xmlns:tools="http://schemas.android.com/tools">
+              <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" tools:ignore="QueryAllPackagesPermission" />
+              <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+              <uses-permission android:name="android.permission.VIBRATE" />
+              <application
+                  android:allowBackup="false"
+                  android:label="@string/app_name"
+                  android:supportsRtl="true"
+                  android:theme="@android:style/Theme.DeviceDefault.DayNight">
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true"
+                      android:configChanges="uiMode|locale|layoutDirection|orientation|screenSize"
+                      android:launchMode="singleTop"
+                      android:excludeFromRecents="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+                  <service
+                      android:name=".ZeroFlashAccessibilityService"
+                      android:exported="true"
+                      android:label="@string/accessibility_service_label"
+                      android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+                      <intent-filter>
+                          <action android:name="android.accessibilityservice.AccessibilityService" />
+                      </intent-filter>
+                      <meta-data
+                          android:name="android.accessibilityservice"
+                          android:resource="@xml/accessibility_service_config" />
+                  </service>
+              </application>
+          </manifest>
+          ''')
+          w("app/src/main/java/io/zenzy/zeroflash/applock/ZeroFlashApp.kt", r'''
+          package io.zenzy.zeroflash.applock
+          import android.accessibilityservice.AccessibilityService
+          import android.content.BroadcastReceiver
+          import android.content.Context
+          import android.content.Intent
+          import android.content.IntentFilter
+          import android.content.SharedPreferences
+          import android.content.pm.ApplicationInfo
+          import android.graphics.Color as AndroidColor
+          import android.graphics.PixelFormat
+          import android.graphics.Typeface
+          import android.graphics.drawable.GradientDrawable
+          import android.hardware.Sensor
+          import android.hardware.SensorEvent
+          import android.hardware.SensorEventListener
+          import android.hardware.SensorManager
+          import android.net.Uri
+          import android.os.Build
+          import android.os.Bundle
+          import android.os.VibrationEffect
+          import android.os.Vibrator
+          import android.provider.Settings
+          import android.util.TypedValue
+          import android.view.Gravity
+          import android.view.View
+          import android.view.WindowManager
+          import android.view.accessibility.AccessibilityEvent
+          import android.widget.Button as AndroidButton
+          import android.widget.FrameLayout
+          import android.widget.GridLayout
+          import android.widget.LinearLayout
+          import android.widget.TextView
+          import androidx.activity.ComponentActivity
+          import androidx.activity.compose.setContent
+          import androidx.compose.foundation.BorderStroke
+          import androidx.compose.foundation.background
+          import androidx.compose.foundation.clickable
+          import androidx.compose.foundation.isSystemInDarkTheme
+          import androidx.compose.foundation.layout.*
+          import androidx.compose.foundation.lazy.LazyColumn
+          import androidx.compose.foundation.lazy.items
+          import androidx.compose.foundation.shape.CircleShape
+          import androidx.compose.foundation.shape.RoundedCornerShape
+          import androidx.compose.material3.*
+          import androidx.compose.runtime.*
+          import androidx.compose.ui.Alignment
+          import androidx.compose.ui.Modifier
+          import androidx.compose.ui.draw.clip
+          import androidx.compose.ui.graphics.Brush
+          import androidx.compose.ui.graphics.Color
+          import androidx.compose.ui.platform.LocalLayoutDirection
+          import androidx.compose.ui.text.font.FontWeight
+          import androidx.compose.ui.unit.LayoutDirection
+          import androidx.compose.ui.unit.dp
+          import androidx.compose.ui.unit.sp
+          import java.security.MessageDigest
+          import java.util.concurrent.ConcurrentHashMap
+          enum class ThemeMode { SYSTEM, DARK, LIGHT }
+          enum class AppLanguage(val displayName: String, val dir: LayoutDirection) {
+              FA("فارسی", LayoutDirection.Rtl),
+              EN("English", LayoutDirection.Ltr)
+          }
+          object AppRepo {
+              private lateinit var prefs: SharedPreferences
+              private val lockedPkgs = ConcurrentHashMap.newKeySet<String>()
+              private val unlockedSession = ConcurrentHashMap.newKeySet<String>()
+              fun init(ctx: Context) {
+                  if (::prefs.isInitialized) return
+                  prefs = ctx.applicationContext.getSharedPreferences("knox_oneui9_prefs", Context.MODE_PRIVATE)
+                  lockedPkgs.addAll(prefs.getStringSet("locked", emptySet()) ?: emptySet())
+                  if (prefs.getString("pin_hash", null) == null) setPin("1234")
+              }
+              fun shouldIntercept(pkg: String, myPkg: String): Boolean {
+                  if (pkg == myPkg || pkg.contains("systemui") || pkg.contains("inputmethod")) return false
+                  if (!lockedPkgs.contains(pkg)) {
+                      unlockedSession.clear()
+                      return false
+                  }
+                  return !unlockedSession.contains(pkg)
+              }
+              fun markUnlocked(pkg: String) { unlockedSession.add(pkg) }
+              fun clearUnlocked() { unlockedSession.clear() }
+              fun toggleApp(pkg: String, lock: Boolean) {
+                  if (lock) lockedPkgs.add(pkg) else lockedPkgs.remove(pkg)
+                  prefs.edit().putStringSet("locked", lockedPkgs.toSet()).apply()
+              }
+              fun getLockedSet(): Set<String> = lockedPkgs.toSet()
+              fun getThemeMode(): ThemeMode = runCatching { ThemeMode.valueOf(prefs.getString("tmode", "SYSTEM") ?: "SYSTEM") }.getOrDefault(ThemeMode.SYSTEM)
+              fun setThemeMode(m: ThemeMode) = prefs.edit().putString("tmode", m.name).apply()
+              fun getLang(): AppLanguage = runCatching { AppLanguage.valueOf(prefs.getString("lang", "FA") ?: "FA") }.getOrDefault(AppLanguage.FA)
+              fun setLang(l: AppLanguage) = prefs.edit().putString("lang", l.name).apply()
+              fun isRandomPad(): Boolean = prefs.getBoolean("rpad", true)
+              fun setRandomPad(v: Boolean) = prefs.edit().putBoolean("rpad", v).apply()
+              fun isPanicFlip(): Boolean = prefs.getBoolean("pflip", true)
+              fun setPanicFlip(v: Boolean) = prefs.edit().putBoolean("pflip", v).apply()
+              fun setPin(raw: String) = prefs.edit().putString("pin_hash", sha256(raw)).apply()
+              fun verifyPin(raw: String): Boolean = sha256(raw) == (prefs.getString("pin_hash", sha256("1234")) ?: sha256("1234"))
+              private fun sha256(s: String): String =
+                  MessageDigest.getInstance("SHA-256").digest(("knox_salt_" + s).toByteArray()).joinToString("") { "%02x".format(it) }
+          }
+          class ZeroFlashAccessibilityService : AccessibilityService(), SensorEventListener {
+              private lateinit var wm: WindowManager
+              private var rootOverlay: FrameLayout? = null
+              private var isAttached = false
+              private var targetPkg = ""
+              private var enteredPin = ""
+              private var sensorManager: SensorManager? = null
+              private val lp = WindowManager.LayoutParams(
+                  WindowManager.LayoutParams.MATCH_PARENT,
+                  WindowManager.LayoutParams.MATCH_PARENT,
+                  WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+                  WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                      WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED or
+                      WindowManager.LayoutParams.FLAG_SECURE or
+                      WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED,
+                  PixelFormat.OPAQUE
+              ).apply {
+                  gravity = Gravity.TOP or Gravity.START
+                  windowAnimations = 0
+              }
+              private val screenOffReceiver = object : BroadcastReceiver() {
+                  override fun onReceive(context: Context?, intent: Intent?) {
+                      if (intent?.action == Intent.ACTION_SCREEN_OFF) {
+                          AppRepo.clearUnlocked()
+                          hideOverlay()
+                      }
+                  }
+              }
+              override fun onServiceConnected() {
+                  super.onServiceConnected()
+                  AppRepo.init(this)
+                  wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+                  registerReceiver(screenOffReceiver, IntentFilter(Intent.ACTION_SCREEN_OFF))
+                  sensorManager = getSystemService(Context.SENSOR_SERVICE) as? SensorManager
+                  sensorManager?.getDefaultSensor(Sensor.TYPE_GRAVITY)?.let {
+                      sensorManager?.registerListener(this, it, SensorManager.SENSOR_DELAY_NORMAL)
+                  }
+              }
+              override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+                  val pkg = event?.packageName?.toString() ?: return
+                  if (AppRepo.shouldIntercept(pkg, packageName)) {
+                      showSecureFolderLock(pkg)
+                  }
+              }
+              private fun dp(v: Int): Int =
+                  TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v.toFloat(), resources.displayMetrics).toInt()
+              private fun showSecureFolderLock(pkg: String) {
+                  targetPkg = pkg
+                  enteredPin = ""
+                  val isFa = AppRepo.getLang() == AppLanguage.FA
+                  val digits = if (AppRepo.isRandomPad()) (0..9).shuffled() else (0..9).toList()
+                  val container = FrameLayout(this).apply {
+                      background = GradientDrawable(
+                          GradientDrawable.Orientation.TOP_BOTTOM,
+                          intArrayOf(0xFF0C1E3E.toInt(), 0xFF071126.toInt(), 0xFF030712.toInt())
+                      )
+                  }
+                  val mainCol = LinearLayout(this).apply {
+                      orientation = LinearLayout.VERTICAL
+                      gravity = Gravity.CENTER_HORIZONTAL
+                      setPadding(dp(24), dp(56), dp(24), dp(36))
+                      layoutParams = FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
+                  }
+                  val shieldBadge = TextView(this).apply {
+                      text = "🛡️"
+                      textSize = 34f
+                      gravity = Gravity.CENTER
+                      background = GradientDrawable().apply {
+                          shape = GradientDrawable.RECTANGLE
+                          cornerRadius = dp(24).toFloat()
+                          setColor(0x33387AFF)
+                          setStroke(dp(1), 0x80387AFF.toInt())
+                      }
+                  }
+                  mainCol.addView(shieldBadge, LinearLayout.LayoutParams(dp(76), dp(76)))
+                  val titleView = TextView(this).apply {
+                      text = if (isFa) "پوشه امن سامسونگ (One UI 9)" else "Samsung Secure Folder"
+                      setTextColor(AndroidColor.WHITE)
+                      textSize = 21f
+                      typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+                      gravity = Gravity.CENTER
+                      setPadding(0, dp(18), 0, dp(6))
+                  }
+                  mainCol.addView(titleView)
+                  val subView = TextView(this).apply {
+                      text = pkg
+                      setTextColor(0xFF8EA4C8.toInt())
+                      textSize = 13f
+                      gravity = Gravity.CENTER
+                  }
+                  mainCol.addView(subView)
+                  mainCol.addView(View(this), LinearLayout.LayoutParams(1, 0, 1f))
+                  val cardCol = LinearLayout(this).apply {
+                      orientation = LinearLayout.VERTICAL
+                      gravity = Gravity.CENTER_HORIZONTAL
+                      setPadding(dp(20), dp(24), dp(20), dp(24))
+                      background = GradientDrawable().apply {
+                          shape = GradientDrawable.RECTANGLE
+                          cornerRadius = dp(32).toFloat()
+                          setColor(0xCC0F1D36.toInt())
+                          setStroke(dp(1), 0x33FFFFFF)
+                      }
+                  }
+                  val promptText = TextView(this).apply {
+                      text = if (isFa) "پین پوشه امن را وارد کنید" else "Enter Secure Folder PIN"
+                      setTextColor(0xFFD8E2F3.toInt())
+                      textSize = 14f
+                      gravity = Gravity.CENTER
+                  }
+                  cardCol.addView(promptText)
+                  val dotsView = TextView(this).apply {
+                      text = "○   ○   ○   ○"
+                      setTextColor(0xFF387AFF.toInt())
+                      textSize = 20f
+                      gravity = Gravity.CENTER
+                      setPadding(0, dp(14), 0, dp(20))
+                  }
+                  cardCol.addView(dotsView)
+                  fun updateDots() {
+                      dotsView.text = (0 until 4).joinToString("   ") { if (it < enteredPin.length) "●" else "○" }
+                  }
+                  val grid = GridLayout(this).apply {
+                      columnCount = 3
+                      rowCount = 4
+                      layoutDirection = View.LAYOUT_DIRECTION_LTR
+                  }
+                  fun makeKey(label: String, onClick: () -> Unit): AndroidButton {
+                      return AndroidButton(this).apply {
+                          text = label
+                          setTextColor(AndroidColor.WHITE)
+                          textSize = 21f
+                          isAllCaps = false
+                          background = GradientDrawable().apply {
+                              shape = GradientDrawable.OVAL
+                              setColor(0x33FFFFFF)
+                              setStroke(dp(1), 0x26FFFFFF)
+                          }
+                          setOnClickListener { onClick() }
+                      }
+                  }
+                  fun pressDigit(d: Int) {
+                      if (enteredPin.length < 4) {
+                          enteredPin += d.toString()
+                          updateDots()
+                          if (enteredPin.length == 4) {
+                              if (AppRepo.verifyPin(enteredPin)) {
+                                  AppRepo.markUnlocked(targetPkg)
+                                  hideOverlay()
+                              } else {
+                                  vibrateError()
+                                  enteredPin = ""
+                                  updateDots()
+                                  promptText.text = if (isFa) "پین نادرست است" else "Incorrect PIN"
+                                  promptText.setTextColor(0xFFFF8A80.toInt())
+                              }
+                          }
+                      }
+                  }
+                  for (i in 0 until 9) {
+                      val d = digits[i]
+                      grid.addView(makeKey(d.toString()) { pressDigit(d) }, GridLayout.LayoutParams().apply {
+                          width = dp(72); height = dp(72); setMargins(dp(10), dp(8), dp(10), dp(8))
+                      })
+                  }
+                  grid.addView(makeKey(if (isFa) "خروج" else "Exit") {
+                      performGlobalAction(GLOBAL_ACTION_HOME)
+                      hideOverlay()
+                  }.apply { textSize = 13f }, GridLayout.LayoutParams().apply {
+                      width = dp(72); height = dp(72); setMargins(dp(10), dp(8), dp(10), dp(8))
+                  })
+                  grid.addView(makeKey(digits[9].toString()) { pressDigit(digits[9]) }, GridLayout.LayoutParams().apply {
+                      width = dp(72); height = dp(72); setMargins(dp(10), dp(8), dp(10), dp(8))
+                  })
+                  grid.addView(makeKey("⌫") {
+                      if (enteredPin.isNotEmpty()) {
+                          enteredPin = enteredPin.dropLast(1)
+                          updateDots()
+                      }
+                  }, GridLayout.LayoutParams().apply {
+                      width = dp(72); height = dp(72); setMargins(dp(10), dp(8), dp(10), dp(8))
+                  })
+                  cardCol.addView(grid)
+                  mainCol.addView(cardCol, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+                  container.addView(mainCol)
+                  hideOverlay()
+                  rootOverlay = container
+                  runCatching {
+                      wm.addView(container, lp)
+                      isAttached = true
+                  }
+              }
+              private fun hideOverlay() {
+                  val v = rootOverlay ?: return
+                  if (isAttached) {
+                      runCatching { wm.removeViewImmediate(v); isAttached = false }
+                  }
+                  rootOverlay = null
+              }
+              private fun vibrateError() {
+                  val vib = getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator ?: return
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                      vib.vibrate(VibrationEffect.createOneShot(110L, VibrationEffect.DEFAULT_AMPLITUDE))
+                  }
+              }
+              override fun onSensorChanged(event: SensorEvent?) {
+                  if (!AppRepo.isPanicFlip()) return
+                  if (event?.sensor?.type == Sensor.TYPE_GRAVITY && event.values[2] < -9.2f) {
+                      AppRepo.clearUnlocked()
+                      hideOverlay()
+                      performGlobalAction(GLOBAL_ACTION_HOME)
+                  }
+              }
+              override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
+              override fun onInterrupt() { hideOverlay() }
+              override fun onDestroy() {
+                  runCatching {
+                      unregisterReceiver(screenOffReceiver)
+                      sensorManager?.unregisterListener(this)
+                  }
+                  super.onDestroy()
+              }
+          }
+          data class AppItem(val label: String, val pkg: String, val locked: Boolean)
+          class MainActivity : ComponentActivity() {
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  AppRepo.init(this)
+                  setContent {
+                      var themeMode by remember { mutableStateOf(AppRepo.getThemeMode()) }
+                      var lang by remember { mutableStateOf(AppRepo.getLang()) }
+                      var showPreview by remember { mutableStateOf(false) }
+                      val sysDark = isSystemInDarkTheme()
+                      val isDark = when (themeMode) {
+                          ThemeMode.SYSTEM -> sysDark
+                          ThemeMode.DARK -> true
+                          ThemeMode.LIGHT -> false
+                      }
+                      val bg = if (isDark) Color(0xFF000000) else Color(0xFFF2F2F7)
+                      val card = if (isDark) Color(0xFF171A21) else Color(0xFFFFFFFF)
+                      val border = if (isDark) Color(0x26FFFFFF) else Color(0x14000000)
+                      val blue = if (isDark) Color(0xFF387AFF) else Color(0xFF0072DE)
+                      val txt = if (isDark) Color.White else Color(0xFF0D0F14)
+                      val sub = if (isDark) Color(0xFF8E97A8) else Color(0xFF636B78)
+                      val isFa = lang == AppLanguage.FA
+                      var apps by remember { mutableStateOf(loadInstalledApps()) }
+                      var randomPad by remember { mutableStateOf(AppRepo.isRandomPad()) }
+                      var panicFlip by remember { mutableStateOf(AppRepo.isPanicFlip()) }
+                      CompositionLocalProvider(LocalLayoutDirection provides lang.dir) {
+                          MaterialTheme {
+                              if (showPreview) {
+                                  SecureFolderPreviewScreen(isFa = isFa, onClose = { showPreview = false })
+                              } else {
+                                  LazyColumn(
+                                      modifier = Modifier.fillMaxSize().background(bg).padding(horizontal = 16.dp),
+                                      verticalArrangement = Arrangement.spacedBy(14.dp),
+                                      contentPadding = PaddingValues(top = 42.dp, bottom = 36.dp)
+                                  ) {
+                                      item {
+                                          Column(Modifier.fillMaxWidth().padding(vertical = 18.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                              Surface(shape = RoundedCornerShape(50), color = blue.copy(alpha = 0.15f)) {
+                                                  Text(
+                                                      text = "🛡️ Samsung Secure Folder • One UI 9",
+                                                      color = blue,
+                                                      fontSize = 12.sp,
+                                                      fontWeight = FontWeight.SemiBold,
+                                                      modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
+                                                  )
+                                              }
+                                              Spacer(Modifier.height(10.dp))
+                                              Text(
+                                                  text = if (isFa) "قفل آنی پوشه امن" else "Secure Folder App Lock",
+                                                  color = txt,
+                                                  fontSize = 30.sp,
+                                                  fontWeight = FontWeight.Light
+                                              )
+                                              Spacer(Modifier.height(4.dp))
+                                              Text(
+                                                  text = if (isFa) "${apps.count { it.locked }} برنامه قفل‌شده • رمز پیش‌فرض: 1234" else "${apps.count { it.locked }} Locked Apps • Default PIN: 1234",
+                                                  color = sub,
+                                                  fontSize = 13.sp
+                                              )
+                                          }
+                                      }
+                                      item {
+                                          Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                              Button(
+                                                  onClick = {
+                                                      if (!Settings.canDrawOverlays(this@MainActivity)) {
+                                                          startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
+                                                      }
+                                                  },
+                                                  modifier = Modifier.weight(1f).height(48.dp),
+                                                  shape = RoundedCornerShape(24.dp),
+                                                  colors = ButtonDefaults.buttonColors(containerColor = card),
+                                                  border = BorderStroke(1.dp, border)
+                                              ) {
+                                                  Text(if (isFa) "۱. مجوز لایه شناور" else "1. Overlay Permission", color = txt, fontSize = 12.sp)
+                                              }
+                                              Button(
+                                                  onClick = { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) },
+                                                  modifier = Modifier.weight(1f).height(48.dp),
+                                                  shape = RoundedCornerShape(24.dp),
+                                                  colors = ButtonDefaults.buttonColors(containerColor = blue)
+                                              ) {
+                                                  Text(if (isFa) "۲. سرویس تشخیص آنی" else "2. Instant Service", color = Color.White, fontSize = 12.sp)
+                                              }
+                                          }
+                                      }
+                                      item {
+                                          Surface(shape = RoundedCornerShape(28.dp), color = card, border = BorderStroke(1.dp, border), modifier = Modifier.fillMaxWidth()) {
+                                              Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                                  Text(if (isFa) "حالت تم برنامه (پیروی از گوشی)" else "App Theme Mode (Follow Phone)", color = txt, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                                  Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                      listOf(
+                                                          ThemeMode.SYSTEM to (if (isFa) "خودکار سیستم" else "System Auto"),
+                                                          ThemeMode.LIGHT to (if (isFa) "روشن" else "Light"),
+                                                          ThemeMode.DARK to (if (isFa) "تاریک" else "Dark")
+                                                      ).forEach { (m, label) ->
+                                                          val sel = themeMode == m
+                                                          Surface(
+                                                              shape = RoundedCornerShape(20.dp),
+                                                              color = if (sel) blue else blue.copy(alpha = 0.12f),
+                                                              modifier = Modifier.weight(1f).height(40.dp).clickable {
+                                                                  themeMode = m
+                                                                  AppRepo.setThemeMode(m)
+                                                              }
+                                                          ) {
+                                                              Box(contentAlignment = Alignment.Center) {
+                                                                  Text(label, color = if (sel) Color.White else txt, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                                                              }
+                                                          }
+                                                      }
+                                                  }
+                                                  Text(if (isFa) "زبان برنامه (Language)" else "App Language (زبان)", color = txt, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                                  Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                      AppLanguage.entries.forEach { l ->
+                                                          val sel = lang == l
+                                                          Surface(
+                                                              shape = RoundedCornerShape(20.dp),
+                                                              color = if (sel) blue else blue.copy(alpha = 0.12f),
+                                                              modifier = Modifier.weight(1f).height(40.dp).clickable {
+                                                                  lang = l
+                                                                  AppRepo.setLang(l)
+                                                              }
+                                                          ) {
+                                                              Box(contentAlignment = Alignment.Center) {
+                                                                  Text(l.displayName, color = if (sel) Color.White else txt, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                                                              }
+                                                          }
+                                                      }
+                                                  }
+                                                  Button(
+                                                      onClick = { showPreview = true },
+                                                      modifier = Modifier.fillMaxWidth().height(46.dp),
+                                                      shape = RoundedCornerShape(22.dp),
+                                                      colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0C1E3E))
+                                                  ) {
+                                                      Text(
+                                                          text = if (isFa) "🛡️ پیش‌نمایش صفحه قفل Secure Folder" else "🛡️ Preview Secure Folder Lock Screen",
+                                                          color = Color.White,
+                                                          fontSize = 13.sp
+                                                      )
+                                                  }
+                                              }
+                                          }
+                                      }
+                                      item {
+                                          Surface(shape = RoundedCornerShape(28.dp), color = card, border = BorderStroke(1.dp, border), modifier = Modifier.fillMaxWidth()) {
+                                              Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                                  Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                                      Text(if (isFa) "صفحه‌کلید تصادفی ضد رد انگشت" else "Anti-Smudge Randomized Keypad", color = txt, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                                                      Switch(checked = randomPad, onCheckedChange = { randomPad = it; AppRepo.setRandomPad(it) })
+                                                  }
+                                                  Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                                      Text(if (isFa) "قفل اضطراری با برگرداندن گوشی (Panic Flip)" else "Panic Flip-to-Lock (Face Down)", color = txt, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                                                      Switch(checked = panicFlip, onCheckedChange = { panicFlip = it; AppRepo.setPanicFlip(it) })
+                                                  }
+                                              }
+                                          }
+                                      }
+                                      items(apps, key = { it.pkg }) { item ->
+                                          Surface(shape = RoundedCornerShape(24.dp), color = card, border = BorderStroke(1.dp, border), modifier = Modifier.fillMaxWidth()) {
+                                              Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 14.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                                  Column(Modifier.weight(1f)) {
+                                                      Text(item.label, color = txt, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                                                      Text(item.pkg, color = sub, fontSize = 12.sp)
+                                                  }
+                                                  Switch(
+                                                      checked = item.locked,
+                                                      onCheckedChange = { locked ->
+                                                          AppRepo.toggleApp(item.pkg, locked)
+                                                          apps = apps.map { if (it.pkg == item.pkg) it.copy(locked = locked) else it }
+                                                      }
+                                                  )
+                                              }
+                                          }
+                                      }
+                                  }
+                              }
+                          }
+                      }
+                  }
+              }
+              private fun loadInstalledApps(): List<AppItem> {
+                  val locked = AppRepo.getLockedSet()
+                  return packageManager.getInstalledApplications(0)
+                      .filter { (it.flags and ApplicationInfo.FLAG_SYSTEM) == 0 || it.packageName.contains("settings") || it.packageName.contains("gallery") }
+                      .map { AppItem(packageManager.getApplicationLabel(it).toString(), it.packageName, locked.contains(it.packageName)) }
+                      .sortedBy { it.label }
+              }
+          }
+          @Composable
+          private fun SecureFolderPreviewScreen(isFa: Boolean, onClose: () -> Unit) {
+              var pin by remember { mutableStateOf("") }
+              val digits = remember { (0..9).shuffled() }
+              Box(
+                  modifier = Modifier.fillMaxSize().background(
+                      Brush.verticalGradient(listOf(Color(0xFF0C1E3E), Color(0xFF071126), Color(0xFF030712)))
+                  ).padding(24.dp)
+              ) {
+                  Column(
+                      modifier = Modifier.fillMaxSize(),
+                      horizontalAlignment = Alignment.CenterHorizontally,
+                      verticalArrangement = Arrangement.SpaceBetween
+                  ) {
+                      Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(top = 28.dp)) {
+                          Surface(shape = RoundedCornerShape(24.dp), color = Color(0x33387AFF), border = BorderStroke(1.dp, Color(0x80387AFF)), modifier = Modifier.size(76.dp)) {
+                              Box(contentAlignment = Alignment.Center) { Text("🛡️", fontSize = 34.sp) }
+                          }
+                          Spacer(Modifier.height(16.dp))
+                          Text(if (isFa) "پوشه امن سامسونگ (One UI 9)" else "Samsung Secure Folder", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Medium)
+                      }
+                      CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                          Surface(shape = RoundedCornerShape(32.dp), color = Color(0xCC0F1D36), border = BorderStroke(1.dp, Color(0x33FFFFFF)), modifier = Modifier.fillMaxWidth()) {
+                              Column(Modifier.padding(22.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                  Text(if (isFa) "پین پوشه امن را وارد کنید" else "Enter Secure Folder PIN", color = Color(0xFFD8E2F3), fontSize = 14.sp)
+                                  Spacer(Modifier.height(14.dp))
+                                  Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                                      repeat(4) { i ->
+                                          Box(Modifier.size(14.dp).clip(CircleShape).background(if (i < pin.length) Color(0xFF387AFF) else Color(0x44FFFFFF)))
+                                      }
+                                  }
+                                  Spacer(Modifier.height(20.dp))
+                                  val rows = listOf(digits.subList(0, 3), digits.subList(3, 6), digits.subList(6, 9))
+                                  rows.forEach { r ->
+                                      Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                                          r.forEach { d ->
+                                              Button(
+                                                  onClick = {
+                                                      pin += d.toString()
+                                                      if (pin.length == 4) onClose()
+                                                  },
+                                                  modifier = Modifier.size(68.dp),
+                                                  shape = CircleShape,
+                                                  colors = ButtonDefaults.buttonColors(containerColor = Color(0x33FFFFFF))
+                                              ) { Text(d.toString(), color = Color.White, fontSize = 21.sp) }
+                                          }
+                                      }
+                                      Spacer(Modifier.height(10.dp))
+                                  }
+                                  Button(onClick = onClose, shape = RoundedCornerShape(20.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF387AFF))) {
+                                      Text(if (isFa) "بستن پیش‌نمایش" else "Close Preview")
+                                  }
+                              }
+                          }
+                      }
+                  }
+              }
+          }
+          ''')
+          print("All Samsung Secure Folder files generated cleanly!")
       - name: Set up JDK 17
         uses: actions/setup-java@v5
         with:
           java-version: '17'
           distribution: 'temurin'
-
       - name: Accept Preinstalled Android SDK Licenses
         run: yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null 2>&1 || true
-
       - name: Setup Gradle 8.7
         uses: gradle/actions/setup-gradle@v3
         with:
           gradle-version: '8.7'
-
       - name: Compile Debug APK
         run: |
           gradle assembleDebug --no-daemon
           cp app/build/outputs/apk/debug/app-debug.apk ZeroFlash-OneUI9-AppLock.apk
-
       - name: Upload APK to Actions Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: ZeroFlash-OneUI9-AppLock-APK
           path: ZeroFlash-OneUI9-AppLock.apk
-
       - name: Publish Direct Download APK to GitHub Releases
         uses: softprops/action-gh-release@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: v3.4-oneui9
-          name: "ZeroFlash One UI 9 AppLock (Ready-to-Install APK)"
-          body: "فایل نصبی آماده (ZeroFlash-OneUI9-AppLock.apk) برای گوشی‌های سامسونگ One UI 9 با پشتیبانی از تم تاریک/روشن خودکار، زبان فارسی و انگلیسی، و ۴ تم چرخشی."
+          tag_name: v4.0-securefolder
+          name: "Samsung Secure Folder AppLock One UI 9 (APK)"
+          body: "فایل نصبی آماده (ZeroFlash-OneUI9-AppLock.apk) با تم ثابت پوشه امن سامسونگ (Samsung Secure Folder One UI 9)، پشتیبانی از تم تاریک/روشن خودکار گوشی و زبان فارسی/انگلیسی."
           files: ZeroFlash-OneUI9-AppLock.apk
