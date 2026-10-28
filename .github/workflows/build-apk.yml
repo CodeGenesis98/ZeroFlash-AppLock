@@ -1281,7 +1281,7 @@ jobs:
           }
           // Direct Deep-Link Permission Helpers (Takes user directly to NowLock's specific toggle switch!)
           fun openDirectAccessibilitySettings(context: Context) {
-              val comp = ComponentName(context.packageName, NowLockAccessibilityService::class.java).flattenToString()
+              val comp = ComponentName(context, NowLockAccessibilityService::class.java).flattenToString()
               val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
                   val bundle = Bundle()
                   bundle.putString(":settings:fragment_args_key", comp)
@@ -2056,24 +2056,26 @@ jobs:
               }
           }
           class NewAppInstallReceiver : BroadcastReceiver() {
-              override fun onReceive(context: Context, intent: Intent?) {
+              override fun onReceive(context: Context?, intent: Intent?) {
+                  val ctx = context ?: return
                   if (intent?.action != Intent.ACTION_PACKAGE_ADDED) return
                   if (intent.getBooleanExtra(Intent.EXTRA_REPLACING, false)) return
                   val pkg = intent.data?.schemeSpecificPart ?: return
-                  NewAppNotificationHelper.showLockPromptNotification(context, pkg)
+                  NewAppNotificationHelper.showLockPromptNotification(ctx, pkg)
               }
           }
           class NewAppLockActionReceiver : BroadcastReceiver() {
-              override fun onReceive(context: Context, intent: Intent?) {
-                  AppRepo.init(context)
+              override fun onReceive(context: Context?, intent: Intent?) {
+                  val ctx = context ?: return
+                  AppRepo.init(ctx)
                   val notifId = intent?.getIntExtra("notif_id", 0) ?: 0
-                  val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+                  val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
                   if (notifId != 0) nm?.cancel(notifId)
                   if (intent?.action == "io.nowlock.app.ACTION_LOCK_NEW_APP") {
                       val pkg = intent.getStringExtra("target_pkg") ?: return
                       AppRepo.toggleAppLock(pkg, true)
                       val s = getStrings(AppRepo.getAppLang())
-                      Toast.makeText(context, "🔒 ${s.filterLocked}: $pkg", Toast.LENGTH_SHORT).show()
+                      Toast.makeText(ctx, "🔒 ${s.filterLocked}: $pkg", Toast.LENGTH_SHORT).show()
                   }
               }
           }
@@ -2096,13 +2098,14 @@ jobs:
                   }
               }
               private val dynamicReceiver = object : BroadcastReceiver() {
-                  override fun onReceive(context: Context, intent: Intent?) {
+                  override fun onReceive(context: Context?, intent: Intent?) {
+                      val ctx = context ?: return
                       when (intent?.action) {
                           Intent.ACTION_SCREEN_OFF -> AppRepo.clearAllUnlockedSessionsOnScreenOff()
                           Intent.ACTION_PACKAGE_ADDED -> {
                               if (!intent.getBooleanExtra(Intent.EXTRA_REPLACING, false)) {
                                   val pkg = intent.data?.schemeSpecificPart ?: return
-                                  NewAppNotificationHelper.showLockPromptNotification(context, pkg)
+                                  NewAppNotificationHelper.showLockPromptNotification(ctx, pkg)
                               }
                           }
                       }
@@ -2175,13 +2178,14 @@ jobs:
                   }
               }
               private val dynamicReceiver = object : BroadcastReceiver() {
-                  override fun onReceive(context: Context, intent: Intent?) {
+                  override fun onReceive(context: Context?, intent: Intent?) {
+                      val ctx = context ?: return
                       when (intent?.action) {
                           Intent.ACTION_SCREEN_OFF -> AppRepo.clearAllUnlockedSessionsOnScreenOff()
                           Intent.ACTION_PACKAGE_ADDED -> {
                               if (!intent.getBooleanExtra(Intent.EXTRA_REPLACING, false)) {
                                   val pkg = intent.data?.schemeSpecificPart ?: return
-                                  NewAppNotificationHelper.showLockPromptNotification(context, pkg)
+                                  NewAppNotificationHelper.showLockPromptNotification(ctx, pkg)
                               }
                           }
                       }
@@ -2277,9 +2281,10 @@ jobs:
               }
           }
           class BootStartupReceiver : BroadcastReceiver() {
-              override fun onReceive(context: Context, intent: Intent?) {
-                  AppRepo.init(context)
-                  NowLockMonitorService.startServiceSafely(context)
+              override fun onReceive(context: Context?, intent: Intent?) {
+                  val ctx = context ?: return
+                  AppRepo.init(ctx)
+                  NowLockMonitorService.startServiceSafely(ctx)
               }
           }
           class UninstallProtectionReceiver : DeviceAdminReceiver() {
@@ -3065,13 +3070,14 @@ jobs:
                       AppRepo.launchLockScreenIfNeeded(this, packageName)
                   }
               }
-              override fun onRequestPermissionsResult(
-                  requestCode: Int,
-                  permissions: Array<out String>,
-                  grantResults: IntArray
-              ) {
-                  super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-                  hasCameraState.value = ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+              override fun onWindowFocusChanged(hasFocus: Boolean) {
+                  super.onWindowFocusChanged(hasFocus)
+                  if (hasFocus) {
+                      hasOverlayState.value = Settings.canDrawOverlays(this)
+                      hasAccState.value = isAccessibilityServiceEnabled(this)
+                      hasUsageState.value = isUsageStatsPermissionGranted(this)
+                      hasCameraState.value = ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+                  }
               }
               private fun requestCameraPermissionSafely() {
                   runCatching {
@@ -3128,6 +3134,15 @@ jobs:
                       val hasUsagePerm by hasUsageState
                       val hasCamPerm by hasCameraState
                       val isPausedInRecents by isPausedInRecentsState
+                      LaunchedEffect(hasCamPerm) {
+                          while (!hasCamPerm) {
+                              delay(450)
+                              hasCameraState.value = ContextCompat.checkSelfPermission(
+                                  this@MainActivity,
+                                  Manifest.permission.CAMERA
+                              ) == PackageManager.PERMISSION_GRANTED
+                          }
+                      }
                       val isEngineReady = hasAccPerm && hasUsagePerm && hasOverlayPerm && hasCamPerm
                       val topHeaderBg = if (isDark) Color(0xCC1C1B5A) else Color(0xE6F0F2FA)
                       val card = if (isDark) Color(0xCC282664) else Color(0xF0FFFFFF)
@@ -4431,19 +4446,19 @@ jobs:
                   }
               )
           }
+
           ''')
           print("NowLock v7.5 project generated cleanly!")
-      - name: Compile Signed APK with Preinstalled JDK 17 & Gradle
+      - name: Compile Signed APK with JDK 17 & Gradle 8.7
         run: |
           export JAVA_HOME="${JAVA_HOME_17_X64:-/usr/lib/jvm/temurin-17-jdk-amd64}"
           export PATH="$JAVA_HOME/bin:$PATH"
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null 2>&1 || true
-          if ! command -v gradle &> /dev/null; then
-            curl -sL https://services.gradle.org/distributions/gradle-8.7-bin.zip -o /tmp/gradle.zip
-            unzip -q /tmp/gradle.zip -d /tmp
-            export PATH="/tmp/gradle-8.7/bin:$PATH"
+          if [ ! -f /tmp/gradle-8.7/bin/gradle ]; then
+            curl -sL https://services.gradle.org/distributions/gradle-8.7-bin.zip -o /tmp/gradle-8.7.zip
+            unzip -q -o /tmp/gradle-8.7.zip -d /tmp
           fi
-          gradle assembleDebug --no-daemon --no-build-cache
+          /tmp/gradle-8.7/bin/gradle assembleDebug --no-daemon --no-build-cache --stacktrace
           cp app/build/outputs/apk/debug/app-debug.apk NowLock.apk
       - name: Publish Direct Download APK to GitHub Releases
         env:
