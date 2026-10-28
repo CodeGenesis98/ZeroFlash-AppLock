@@ -9,7 +9,7 @@ jobs:
   build-apk:
     runs-on: ubuntu-24.04
     steps:
-      - name: Generate NowLock v7.1 Project, Persistent Keystore & Icons
+      - name: Generate NowLock v7.5 Project, Persistent Keystore & Icons
         shell: python3 {0}
         run: |
           import os, base64
@@ -338,8 +338,8 @@ jobs:
                   minSdk = 26
                   targetSdk = 34
                   val runNum = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
-                  versionCode = 30 + runNum
-                  versionName = "7.1-NowLock"
+                  versionCode = 40 + runNum
+                  versionName = "7.5-NowLock"
               }
               signingConfigs {
                   getByName("debug") {
@@ -364,6 +364,7 @@ jobs:
           }
           dependencies {
               implementation("androidx.core:core-ktx:1.13.1")
+              implementation("androidx.fragment:fragment-ktx:1.8.1")
               implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.2")
               implementation("androidx.activity:activity-compose:1.9.0")
               implementation(platform("androidx.compose:compose-bom:2024.06.00"))
@@ -420,10 +421,15 @@ jobs:
               <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" tools:ignore="QueryAllPackagesPermission" />
               <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" tools:ignore="ProtectedPermissions" />
               <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+              <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+              <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
               <uses-permission android:name="android.permission.VIBRATE" />
               <uses-permission android:name="android.permission.USE_BIOMETRIC" />
               <uses-permission android:name="android.permission.CAMERA" />
               <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
+              <uses-feature android:name="android.hardware.camera" android:required="false" />
               <uses-feature android:name="android.hardware.camera.front" android:required="false" />
               <application
                   android:allowBackup="false"
@@ -467,7 +473,7 @@ jobs:
                           <category android:name="android.intent.category.LAUNCHER" />
                       </intent-filter>
                   </activity-alias>
-                  <!-- Fullscreen Lock Screen Activity (Removed noHistory so BiometricPrompt never kills it!) -->
+                  <!-- Fullscreen Lock Screen Activity -->
                   <activity
                       android:name=".LockScreenActivity"
                       android:exported="false"
@@ -476,10 +482,11 @@ jobs:
                       android:showOnLockScreen="true"
                       android:configChanges="uiMode|locale|layoutDirection|orientation|screenSize|smallestScreenSize|screenLayout"
                       android:theme="@android:style/Theme.DeviceDefault.NoActionBar" />
-                  <!-- Dual-Engine Accessibility + UsageStats Service (Managed by OS, zero FGS crash risk) -->
+                  <!-- Engine 1: Accessibility + UsageStats Hybrid Service -->
                   <service
                       android:name=".NowLockAccessibilityService"
                       android:exported="true"
+                      android:directBootAware="true"
                       android:label="@string/accessibility_service_label"
                       android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
                       <intent-filter>
@@ -489,6 +496,44 @@ jobs:
                           android:name="android.accessibilityservice"
                           android:resource="@xml/accessibility_service_config" />
                   </service>
+                  <!-- Engine 2: Standalone UsageStats Foreground Service (Reboot & Background Guard) -->
+                  <service
+                      android:name=".NowLockMonitorService"
+                      android:exported="false"
+                      android:directBootAware="true"
+                      android:foregroundServiceType="specialUse">
+                      <property
+                          android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                          android:value="app_lock_foreground_detection" />
+                  </service>
+                  <!-- Automatic Reboot & Package Update Startup Receiver -->
+                  <receiver
+                      android:name=".BootStartupReceiver"
+                      android:directBootAware="true"
+                      android:enabled="true"
+                      android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
+                          <action android:name="android.intent.action.BOOT_COMPLETED" />
+                          <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                          <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                      </intent-filter>
+                  </receiver>
+                  <!-- New App Installed Receiver (Prompts user to lock newly installed apps) -->
+                  <receiver
+                      android:name=".NewAppInstallReceiver"
+                      android:enabled="true"
+                      android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.PACKAGE_ADDED" />
+                          <data android:scheme="package" />
+                      </intent-filter>
+                  </receiver>
+                  <!-- Notification Action Receiver for Locking Newly Installed App -->
+                  <receiver
+                      android:name=".NewAppLockActionReceiver"
+                      android:enabled="true"
+                      android:exported="false" />
                   <!-- Uninstall Protection Device Admin Receiver -->
                   <receiver
                       android:name=".UninstallProtectionReceiver"
@@ -510,18 +555,18 @@ jobs:
           w("app/src/main/java/io/nowlock/app/NowLockApp.kt", r'''
           package io.nowlock.app
           /*
-           * NowLock v7.1
+           * NowLock v7.5
            * Engineered by Hamed (hades.plagueis@gmail.com) & Gemini AI
-           * - 100% Offline, Play-Protect Friendly Manifest
-           * - Crash-Proof Dual-Engine Locking (Accessibility + UsageStats inside OS-bound Service)
-           * - Happ VPN Inspired Dark & Light Gradient Theme + Smooth Per-Character RGB Brand Title
-           * - 5 Languages (Persian, English, Azerbaijani, Luri, Mazandarani/Gilaki)
-           * - Swipe Navigation Between Tabs, Glassy Navigation Bar, Recents Privacy Shield, & Privacy Policy Modal
            */
           import android.Manifest
           import android.accessibilityservice.AccessibilityService
           import android.app.Activity
           import android.app.AppOpsManager
+          import android.app.Notification
+          import android.app.NotificationChannel
+          import android.app.NotificationManager
+          import android.app.PendingIntent
+          import android.app.Service
           import android.app.admin.DeviceAdminReceiver
           import android.app.admin.DevicePolicyManager
           import android.app.usage.UsageEvents
@@ -534,6 +579,7 @@ jobs:
           import android.content.IntentFilter
           import android.content.SharedPreferences
           import android.content.pm.PackageManager
+          import android.content.pm.ServiceInfo
           import android.content.res.Configuration
           import android.graphics.Bitmap
           import android.graphics.BitmapFactory
@@ -556,6 +602,7 @@ jobs:
           import android.os.Environment
           import android.os.Handler
           import android.os.HandlerThread
+          import android.os.IBinder
           import android.os.Looper
           import android.os.Process
           import android.os.VibrationEffect
@@ -568,13 +615,14 @@ jobs:
           import android.view.Surface
           import android.view.WindowManager
           import android.view.accessibility.AccessibilityEvent
+          import android.widget.Button as AndroidButton
           import android.widget.FrameLayout
           import android.widget.ImageView
+          import android.widget.LinearLayout
+          import android.widget.TextView
           import android.widget.Toast
           import androidx.activity.OnBackPressedCallback
-          import androidx.activity.compose.rememberLauncherForActivityResult
           import androidx.activity.compose.setContent
-          import androidx.activity.result.contract.ActivityResultContracts
           import androidx.biometric.BiometricManager
           import androidx.biometric.BiometricPrompt
           import androidx.compose.animation.AnimatedVisibility
@@ -634,6 +682,7 @@ jobs:
           import androidx.compose.ui.text.font.FontFamily
           import androidx.compose.ui.text.font.FontWeight
           import androidx.compose.ui.text.style.TextAlign
+          import androidx.compose.ui.text.style.TextDecoration
           import androidx.compose.ui.text.withStyle
           import androidx.compose.ui.unit.IntSize
           import androidx.compose.ui.unit.LayoutDirection
@@ -642,6 +691,7 @@ jobs:
           import androidx.compose.ui.unit.sp
           import androidx.compose.ui.window.Dialog
           import androidx.compose.ui.window.DialogProperties
+          import androidx.core.app.ActivityCompat
           import androidx.core.content.ContextCompat
           import androidx.core.view.WindowCompat
           import androidx.core.view.WindowInsetsControllerCompat
@@ -656,9 +706,10 @@ jobs:
           import java.util.concurrent.ConcurrentHashMap
           import kotlin.math.floor
           import kotlin.math.hypot
-          const val GITHUB_RELEASES_PAGE_URL = "https://github.com/CodeGenesis98/ZeroFlash-AppLock/releases/latest"
+          const val GITHUB_RELEASES_PAGE_URL = "https://github.com/CodeGenesis98/ZeroFlash-AppLock/releases"
+          const val GITHUB_SHORT_DISPLAY_LINK = "github.com/CodeGenesis98/ZeroFlash-AppLock"
           enum class ThemeMode { SYSTEM, DARK, LIGHT }
-          // 5 Supported Languages: Persian, English, Iranian Azerbaijani, Luri, Mazandarani/Gilaki
+          // 5 Fully Localized Languages: Persian, English, Iranian Azerbaijani, Luri, Mazandarani/Gilaki
           enum class AppLang(val code: String, val nativeLabel: String, val isRtl: Boolean) {
               FA("FA", "فارسی", true),
               EN("EN", "English", false),
@@ -666,26 +717,529 @@ jobs:
               LOR("LOR", "لُری", true),
               MAZ("MAZ", "مازندرانی / گیلکی", true)
           }
-          // Cleaned Lock Mode Labels (Removed "+ Fingerprint" since Fingerprint has its own dedicated toggle below)
+          // Complete Application Localization Dictionary (Every UI element changes with the selected language!)
+          data class UiStrings(
+              val tabApps: String,
+              val tabSettings: String,
+              val tabAbout: String,
+              val statusNoPassword: String,
+              val statusNeedsPerm: String,
+              val statusActive: String,
+              val permBannerTitle: String,
+              val perm1Acc: String,
+              val perm2Usage: String,
+              val perm3Overlay: String,
+              val perm4Camera: String,
+              val searchPlaceholder: String,
+              val filterAll: String,
+              val filterLocked: String,
+              val filterUnlocked: String,
+              val selfAppBadge: String,
+              val secAuthTitle: String,
+              val modePin: String,
+              val modePattern: String,
+              val btnSetPin: String,
+              val btnChangePin: String,
+              val btnSetPattern: String,
+              val btnChangePattern: String,
+              val fpTitle: String,
+              val fpSub: String,
+              val fpEnrollToast: String,
+              val secDelayTitle: String,
+              val secDelaySub: String,
+              val delayImm: String,
+              val delay2m: String,
+              val delay4m: String,
+              val delay6m: String,
+              val delay10m: String,
+              val secIconTitle: String,
+              val iconPadlock: String,
+              val iconCalculator: String,
+              val iconChangedToast: String,
+              val secSecurityTitle: String,
+              val recentsTitle: String,
+              val recentsSub: String,
+              val intruderTitle: String,
+              val intruderSubPrefix: String,
+              val vibrateTitle: String,
+              val vibrateSub: String,
+              val uninstallTitle: String,
+              val uninstallSub: String,
+              val secThemeLangTitle: String,
+              val themeSystem: String,
+              val themeLight: String,
+              val themeDark: String,
+              val selectLangLabel: String,
+              val aboutSubtitle: String,
+              val aboutBody: String,
+              val aboutTechTitle: String,
+              val aboutTechBullets: List<String>,
+              val aboutPrivacyTitle: String,
+              val aboutPrivacySummary: String,
+              val aboutShowMoreBtn: String,
+              val aboutContactTitle: String,
+              val aboutUpdateBtn: String,
+              val updateVisitSiteMsg: String,
+              val lockPromptPin: String,
+              val lockPromptPattern: String,
+              val lockWrongAttempt: String,
+              val lockExitBtn: String,
+              val biometricSubtitle: String,
+              val biometricUsePin: String,
+              val biometricUsePattern: String,
+              val dlgPinTitle: String,
+              val dlgPinSub: String,
+              val dlgPatternTitle: String,
+              val dlgPatternSub: String,
+              val btnSave: String,
+              val btnCancel: String,
+              val btnClear: String,
+              val btnClose: String,
+              val newAppNotifTitle: String,
+              val newAppNotifBody: String,
+              val newAppActionLock: String,
+              val newAppActionDismiss: String
+          )
+          fun getStrings(lang: AppLang): UiStrings = when (lang) {
+              AppLang.FA -> UiStrings(
+                  tabApps = "برنامه‌ها",
+                  tabSettings = "تنظیمات",
+                  tabAbout = "درباره برنامه",
+                  statusNoPassword = "⚠ بدون رمز",
+                  statusNeedsPerm = "⚠ نیاز به مجوز",
+                  statusActive = "✓ محافظ فعال",
+                  permBannerTitle = "برای فعالسازی کامل قفل، روی هر گزینه بزنید تا مستقیماً صفحه مجوز باز شود:",
+                  perm1Acc = "۱. سرویس آنی",
+                  perm2Usage = "۲. آمار مصرف",
+                  perm3Overlay = "۳. نمایش شناور",
+                  perm4Camera = "۴. دوربین سلفی",
+                  searchPlaceholder = "جستجوی نام برنامه...",
+                  filterAll = "همه",
+                  filterLocked = "قفل‌شده",
+                  filterUnlocked = "قفل‌نشده",
+                  selfAppBadge = "خود برنامه",
+                  secAuthTitle = "روش قفل و مدیریت رمز",
+                  modePin = "پین‌کد (PIN)",
+                  modePattern = "پترن (الگو)",
+                  btnSetPin = "تعیین پین‌کد",
+                  btnChangePin = "تغییر پین‌کد",
+                  btnSetPattern = "تعیین الگو",
+                  btnChangePattern = "تغییر الگو",
+                  fpTitle = "فعالسازی هم‌زمان اثر انگشت",
+                  fpSub = "بازگشایی سریع در کنار پین‌کد یا الگوی انتخابی",
+                  fpEnrollToast = "ابتدا اثر انگشت را در تنظیمات گوشی ثبت کنید",
+                  secDelayTitle = "تاخیر در قفل مجدد برنامه",
+                  secDelaySub = "مدت زمانی که پس از یک بار ورود موفق، برنامه دوباره رمز نخواهد:",
+                  delayImm = "فوری",
+                  delay2m = "۲ دقیقه",
+                  delay4m = "۴ دقیقه",
+                  delay6m = "۶ دقیقه",
+                  delay10m = "۱۰ دقیقه",
+                  secIconTitle = "تغییر و مخفی‌سازی آیکون برنامه",
+                  iconPadlock = "قفل زرد",
+                  iconCalculator = "ماشین‌حساب",
+                  iconChangedToast = "آیکون برنامه تغییر یافت",
+                  secSecurityTitle = "امنیت، پس‌زمینه و عکس فضول‌گیر",
+                  recentsTitle = "مخفی‌سازی در برنامه‌های پس‌زمینه (Recents)",
+                  recentsSub = "نمایش صفحه محافظ با آیکون قفل در لیست برنامه‌های اخیر",
+                  intruderTitle = "سلفی فضول‌گیر (پین، الگو و اثر انگشت غلط)",
+                  intruderSubPrefix = "ثبت مخفیانه در گالری پس از ۳ خطا",
+                  vibrateTitle = "ویبره کوتاه هنگام خطا",
+                  vibrateSub = "لرزش ملایم گوشی در صورت ورود رمز یا اثر انگشت اشتباه",
+                  uninstallTitle = "محافظ حذف برنامه (Uninstall Protection)",
+                  uninstallSub = "جلوگیری از پاک شدن NowLock بدون وارد کردن رمز",
+                  secThemeLangTitle = "تم و زبان برنامه",
+                  themeSystem = "خودکار سیستم",
+                  themeLight = "روشن",
+                  themeDark = "تاریک",
+                  selectLangLabel = "انتخاب زبان کل برنامه:",
+                  aboutSubtitle = "طراحی و مهندسی توسط حامد و هوش مصنوعی جمینای (Gemini)",
+                  aboutBody = "به NowLock خوش آمدید. ما (حامد و هوش مصنوعی جمینای) این محصول را با هدف ارائه سریع‌ترین، سبک‌ترین و مطمئن‌ترین سپر محافظتی برای برنامه‌های شخصی شما در سیستم‌عامل اندروید طراحی و مهندسی کرده‌ایم. NowLock با تکیه بر معماری پردازش بلادرنگ و استانداردهای رمزنگاری پیشرفته، بدون کاهش سرعت گوشی یا مصرف محسوس باتری، امنیت کامل حریم خصوصی شما را تضمین می‌کند.",
+                  aboutTechTitle = "فناوری‌ها و زیرساخت مهندسی نرم‌افزار:",
+                  aboutTechBullets = listOf(
+                      "• زبان برنامه‌نویسی Kotlin: پیاده‌سازی ۱۰۰٪ بومی (Native) برای دستیابی به بالاترین سرعت اجرا و پایداری در سطح سیستم‌عامل اندروید.",
+                      "• فریم‌ورک Jetpack Compose & Material 3: معماری رابط کاربری مدرن، واکنش‌گرا و سازگار با انواع نمایشگرها.",
+                      "• الگوریتم‌های رمزنگاری SHA-256 و AndroidX Biometric: حفاظت سخت‌افزاری و یک‌طرفه از داده‌های احراز هویت.",
+                      "• زیرساخت ابری GitHub Actions & Python CI/CD: سیستم کامپایل، تست و انتشار خودکار نسخه‌های رسمی برنامه."
+                  ),
+                  aboutPrivacyTitle = "حریم خصوصی و امنیت اطلاعات کاربران:",
+                  aboutPrivacySummary = "تمامی اطلاعات، رمزها و تنظیمات شما به صورت ۱۰۰٪ آفلاین فقط بر روی حافظه امن دستگاه خودتان نگهداری می‌شوند و هیچ داده‌ای به سرورهای خارجی ارسال نمی‌گردد.",
+                  aboutShowMoreBtn = "نمایش بیشتر (متن کامل حریم خصوصی و شرایط استفاده) ⬅",
+                  aboutContactTitle = "پشتیبانی و ارتباط مستقیم با توسعه‌دهنده (حامد):",
+                  aboutUpdateBtn = "بررسی بروزرسانی برنامه",
+                  updateVisitSiteMsg = "به سایت توسعه‌دهنده مراجعه کنید:",
+                  lockPromptPin = "پین‌کد را وارد کنید",
+                  lockPromptPattern = "الگوی قفل را بدون برداشتن انگشت رسم کنید",
+                  lockWrongAttempt = "رمز یا اثر انگشت اشتباه است، دوباره تلاش کنید",
+                  lockExitBtn = "خروج",
+                  biometricSubtitle = "حسگر اثر انگشت را لمس کنید",
+                  biometricUsePin = "استفاده از پین‌کد",
+                  biometricUsePattern = "استفاده از الگو",
+                  dlgPinTitle = "تعیین پین‌کد ۴ رقمی",
+                  dlgPinSub = "پین‌کد ۴ رقمی دلخواه خود را وارد کنید:",
+                  dlgPatternTitle = "تعیین الگوی قفل (حداقل ۴ نقطه)",
+                  dlgPatternSub = "انگشت خود را بدون برداشتن روی حداقل ۴ نقطه بکشید:",
+                  btnSave = "ذخیره",
+                  btnCancel = "انصراف",
+                  btnClear = "پاک کردن و رسم مجدد",
+                  btnClose = "متوجه شدم و بستن",
+                  newAppNotifTitle = "برنامه جدید نصب شد: ",
+                  newAppNotifBody = "آیا می‌خواهید این برنامه توسط NowLock قفل شود؟",
+                  newAppActionLock = "قفل کردن برنامه",
+                  newAppActionDismiss = "رد کردن"
+              )
+              AppLang.EN -> UiStrings(
+                  tabApps = "Apps",
+                  tabSettings = "Settings",
+                  tabAbout = "About",
+                  statusNoPassword = "⚠ No Password",
+                  statusNeedsPerm = "⚠ Needs Permission",
+                  statusActive = "✓ Guard Active",
+                  permBannerTitle = "Tap each button below to open its direct permission toggle:",
+                  perm1Acc = "1. Instant Service",
+                  perm2Usage = "2. Usage Access",
+                  perm3Overlay = "3. Overlay",
+                  perm4Camera = "4. Selfie Camera",
+                  searchPlaceholder = "Search apps...",
+                  filterAll = "All",
+                  filterLocked = "Locked",
+                  filterUnlocked = "Unlocked",
+                  selfAppBadge = "This App",
+                  secAuthTitle = "Authentication & Password",
+                  modePin = "PIN Code",
+                  modePattern = "Pattern",
+                  btnSetPin = "Set PIN",
+                  btnChangePin = "Change PIN",
+                  btnSetPattern = "Set Pattern",
+                  btnChangePattern = "Change Pattern",
+                  fpTitle = "Enable Fingerprint Unlock",
+                  fpSub = "Fast biometric unlock alongside PIN or Pattern",
+                  fpEnrollToast = "Please enroll a fingerprint in device Settings first",
+                  secDelayTitle = "Relock Delay Timeout",
+                  secDelaySub = "Grace period after unlocking before password is required again:",
+                  delayImm = "Immediate",
+                  delay2m = "2 Min",
+                  delay4m = "4 Min",
+                  delay6m = "6 Min",
+                  delay10m = "10 Min",
+                  secIconTitle = "App Icon Disguise",
+                  iconPadlock = "Padlock",
+                  iconCalculator = "Calculator",
+                  iconChangedToast = "App icon updated",
+                  secSecurityTitle = "Security, Recents & Intruder Guard",
+                  recentsTitle = "Hide Locked Apps in Recent Apps",
+                  recentsSub = "Show theme-matched padlock shield in Recent Apps switcher",
+                  intruderTitle = "Intruder Selfie (Wrong PIN, Pattern & Fingerprint)",
+                  intruderSubPrefix = "Silently saved to Gallery after 3 wrong tries",
+                  vibrateTitle = "Short Vibration on Error",
+                  vibrateSub = "Brief haptic feedback on wrong password or fingerprint",
+                  uninstallTitle = "Uninstall Protection",
+                  uninstallSub = "Prevent uninstalling NowLock without password",
+                  secThemeLangTitle = "Theme & Application Language",
+                  themeSystem = "System",
+                  themeLight = "Light",
+                  themeDark = "Dark",
+                  selectLangLabel = "Select Full Application Language:",
+                  aboutSubtitle = "Engineered by Hamed & Gemini AI",
+                  aboutBody = "Welcome to NowLock. Engineered by Hamed and Gemini AI, NowLock delivers an ultra-fast, lightweight, and uncompromising privacy shield for your personal Android applications. Built on a real-time dual-detection architecture and modern cryptographic standards, NowLock protects your digital life seamlessly with zero lag and minimal battery impact.",
+                  aboutTechTitle = "Software Engineering & Core Technologies:",
+                  aboutTechBullets = listOf(
+                      "• Kotlin Native Architecture: 100% native compilation for maximum execution speed and OS-level stability.",
+                      "• Jetpack Compose & Material 3: Modern declarative UI engine with fluid animations and adaptive layouts.",
+                      "• SHA-256 Cryptography & AndroidX Biometric: Hardware-backed authentication and one-way credential hashing.",
+                      "• GitHub Actions & Python Cloud CI/CD: Automated build, verification, and release delivery pipeline."
+                  ),
+                  aboutPrivacyTitle = "Privacy Policy & Data Security:",
+                  aboutPrivacySummary = "All passwords, configurations, and security logs remain 100% offline on your device. NowLock collects zero personal data and uses no external tracking servers.",
+                  aboutShowMoreBtn = "Show More (Full Privacy Policy & Terms) ➔",
+                  aboutContactTitle = "Developer Support & Contact (Hamed):",
+                  aboutUpdateBtn = "Check for Updates",
+                  updateVisitSiteMsg = "Visit the developer website:",
+                  lockPromptPin = "Enter PIN Code",
+                  lockPromptPattern = "Draw Unlock Pattern without lifting finger",
+                  lockWrongAttempt = "Incorrect password or fingerprint, try again",
+                  lockExitBtn = "Exit",
+                  biometricSubtitle = "Touch the fingerprint sensor",
+                  biometricUsePin = "Use PIN",
+                  biometricUsePattern = "Use Pattern",
+                  dlgPinTitle = "Set 4-Digit PIN",
+                  dlgPinSub = "Enter your custom 4-digit PIN:",
+                  dlgPatternTitle = "Set Pattern (Min 4 Dots)",
+                  dlgPatternSub = "Drag your finger continuously across at least 4 dots:",
+                  btnSave = "Save",
+                  btnCancel = "Cancel",
+                  btnClear = "Clear & Redraw",
+                  btnClose = "Close",
+                  newAppNotifTitle = "New App Installed: ",
+                  newAppNotifBody = "Would you like to lock this app with NowLock?",
+                  newAppActionLock = "Lock App",
+                  newAppActionDismiss = "Dismiss"
+              )
+              AppLang.AZ -> UiStrings(
+                  tabApps = "برنامه‌لر",
+                  tabSettings = "تنظیمات",
+                  tabAbout = "برنامه حاقّیندا",
+                  statusNoPassword = "⚠ رمزسیز",
+                  statusNeedsPerm = "⚠ ایجازه لازیمدیر",
+                  statusActive = "✓ قورویوجو فعّالدیر",
+                  permBannerTitle = "قفلون تام ایشلمه‌سی اوچون بو ۴ ایجازه‌نی بیر توخونوشلا فعّال ائدین:",
+                  perm1Acc = "۱. آنی خیدمت",
+                  perm2Usage = "۲. ایستیفاده آمار",
+                  perm3Overlay = "۳. اوست گؤرونوش",
+                  perm4Camera = "۴. سلفی کامئرا",
+                  searchPlaceholder = "برنامه آختار...",
+                  filterAll = "هامیسی",
+                  filterLocked = "قفل‌لانمیش",
+                  filterUnlocked = "آچیق",
+                  selfAppBadge = "بو برنامه",
+                  secAuthTitle = "قفل اوصولو و رمز ایالتی",
+                  modePin = "پین‌کود (PIN)",
+                  modePattern = "اولگو (Pattern)",
+                  btnSetPin = "پین‌کود تعیین ائت",
+                  btnChangePin = "پین‌کودو دییش",
+                  btnSetPattern = "اولگو تعیین ائت",
+                  btnChangePattern = "اولگونو دییش",
+                  fpTitle = "بارماق ایزی ایله آچماق",
+                  fpSub = "پین‌کود و یا اولگو ایله بیرلیکده سورعتلی آچماق",
+                  fpEnrollToast = "اولجه بارماق ایزینی تئلفون تنظیماتیندا قئید ائدین",
+                  secDelayTitle = "یئنیدن قفل‌لانما گئجیکمه‌سی",
+                  secDelaySub = "برنامه آچیلدیقدان سونرا یئنیدن رمز ایستمه‌مه مودّتی:",
+                  delayImm = "فوری",
+                  delay2m = "۲ دقیقه",
+                  delay4m = "۴ دقیقه",
+                  delay6m = "۶ دقیقه",
+                  delay10m = "۱۰ دقیقه",
+                  secIconTitle = "برنامه آیکونونو دییشمک و گیزلتمک",
+                  iconPadlock = "ساری قفل",
+                  iconCalculator = "ماشین‌حساب",
+                  iconChangedToast = "برنامه آیکونو دییشدیریلدی",
+                  secSecurityTitle = "امنیّت، آرخا پلان و گیزلی سلفی",
+                  recentsTitle = "آرخا پلان برنامه‌لرینده گیزلتمه (Recents)",
+                  recentsSub = "سون برنامه‌لر سیاهیسیندا قفل آیکونلو قورویوجو صفحه گؤستر",
+                  intruderTitle = "گیزلی سلفی (یانلیش پین، اولگو و بارماق ایزی)",
+                  intruderSubPrefix = "۳ یانلیش جهددن سونرا قالئرئیایا قئید ائدیلیر",
+                  vibrateTitle = "یانلیش رمزدن سونرا قیسّا تیتره‌یش",
+                  vibrateSub = "رمز و یا بارماق ایزی یانلیش اولدوقدا یومشاق تیتره‌یش",
+                  uninstallTitle = "سیلینمه‌دن قوروما (Uninstall Protection)",
+                  uninstallSub = "رمزسیز NowLock برنامه‌سی‌نین سیلینمه‌سی‌نین قارشیسینی آل",
+                  secThemeLangTitle = "گؤرونوش و برنامه دیلی",
+                  themeSystem = "سیستئم",
+                  themeLight = "ایشیقلی",
+                  themeDark = "قارانلیق",
+                  selectLangLabel = "بوتون برنامه‌نین دیلینی سئچین:",
+                  aboutSubtitle = "حامد و جمینای (Gemini) یاپای زکاسی طرفیندن طراحی و موهندیس‌لیک ائدیلیب",
+                  aboutBody = "NowLock برنامه‌سینه خوش گلمیسینیز. بیز (حامد و جمینای یاپای زکاسی) بو محصولو اندروید تئلفونلاردا شخصی برنامه‌لرینیز اوچون ان سورعتلی، ان یüngول و ان اعتیبارلی قورویوجو قالخان اولاراق حاضیرلامیشیق. NowLock تئلفونون سورعتینی آزالتمازدان و باتارئیا مصرف ائتمه‌دن تام امنیّت یارادیر.",
+                  aboutTechTitle = "تئخنولوژیلر و یازیلیم موهندیس‌لیگی:",
+                  aboutTechBullets = listOf(
+                      "• Kotlin دیلی: ان یوکسک سورعت و سیستئم پایدارلیغی اوچون ۱۰۰٪ بومی (Native) یازیلیم.",
+                      "• Jetpack Compose & Material 3: مودئرن، آخارلی و بوتون صفحه اؤلچولرینه اویغون گؤرونوش.",
+                      "• SHA-256 شفره‌لمه و AndroidX Biometric: رمز و بارماق ایزی‌نین سخت‌افزار سوییه‌سینده قورونماسی.",
+                      "• GitHub Actions & Python CI/CD: رسمی نوسخه‌لرین اوتوماتیک قورولماسی و یاییملانماسی."
+                  ),
+                  aboutPrivacyTitle = "خصوصی حریم و معلومات امنیّتی:",
+                  aboutPrivacySummary = "بوتون رمزلرینیز و تنظیماتینیز ۱۰۰٪ آفلاین شکیلده یالنیز اؤز تئلفونونوزدا ساخلانیلیر و هئچ بیر سئروئره گؤندریلمیر.",
+                  aboutShowMoreBtn = "داها چوخ گؤستر (خصوصی حریم و ایستیفاده شرطلری) ⬅",
+                  aboutContactTitle = "گلیشدیریجی ایله بیرباشا علاقه (حامد):",
+                  aboutUpdateBtn = "بروزرسانی یوخلاماسی",
+                  updateVisitSiteMsg = "گلیشدیریجی سایتینا مراجعت ائدین:",
+                  lockPromptPin = "پین‌کودو داخیل ائدین",
+                  lockPromptPattern = "بارماغینیزی قالدیرمادان قفل اولگوسونو چکین",
+                  lockWrongAttempt = "رمز و یا بارماق ایزی یانلیشدیر، یئنیدن جهد ائدین",
+                  lockExitBtn = "چیخیش",
+                  biometricSubtitle = "بارماق ایزی سئنسورونا توخونون",
+                  biometricUsePin = "پین‌کود ایستیفاده ائت",
+                  biometricUsePattern = "اولگو ایستیفاده ائت",
+                  dlgPinTitle = "۴ رقمی پین‌کود تعیین ائت",
+                  dlgPinSub = "ایسته‌دیگینیز ۴ رقمی پین‌کودو داخیل ائدین:",
+                  dlgPatternTitle = "قفل اولگوسو تعیین ائت (ان آزی ۴ نوقطه)",
+                  dlgPatternSub = "بارماغینیزی قالدیرمادان ان آزی ۴ نوقطه اوستوندن چکین:",
+                  btnSave = "یاadda saxla / ذخیره",
+                  btnCancel = "لغو ائت",
+                  btnClear = "تمیزله و یئنیدن چک",
+                  btnClose = "باغلا",
+                  newAppNotifTitle = "یئنی برنامه قورولدو: ",
+                  newAppNotifBody = "بو برنامه‌نی NowLock ایله قفل‌لاماق ایسته‌ایرسینیزمی؟",
+                  newAppActionLock = "قفل‌لا",
+                  newAppActionDismiss = "رد ائت"
+              )
+              AppLang.LOR -> UiStrings(
+                  tabApps = "برنامیا",
+                  tabSettings = "سامونیا",
+                  tabAbout = "دباره برنامه",
+                  statusNoPassword = "⚠ بی رمز",
+                  statusNeedsPerm = "⚠ مجوز میخا",
+                  statusActive = "✓ محافظ فعاله",
+                  permBannerTitle = "سی کار کردن قفل، رو هر دکمه بزنید تا مستقیم صفحه مجوزش وا بوئه:",
+                  perm1Acc = "۱. سرویس آنی",
+                  perm2Usage = "۲. آمار مصرف",
+                  perm3Overlay = "۳. نمایش شناور",
+                  perm4Camera = "۴. دوربین سلفی",
+                  searchPlaceholder = "پیا کردن برنامه...",
+                  filterAll = "همه",
+                  filterLocked = "قفل‌بیه‌یا",
+                  filterUnlocked = "قفل‌نبیه‌یا",
+                  selfAppBadge = "خو برنامه",
+                  secAuthTitle = "روش قفل و سامون رمز",
+                  modePin = "پین‌کد (PIN)",
+                  modePattern = "پترن (الگو)",
+                  btnSetPin = "نهائن پین‌کد",
+                  btnChangePin = "آلشت پین‌کد",
+                  btnSetPattern = "نهائن الگو",
+                  btnChangePattern = "آلشت الگو",
+                  fpTitle = "واکلیدن هم‌زمان وا اثر کلک",
+                  fpSub = "واکلیدن زو کل پین‌کد یا الگو",
+                  fpEnrollToast = "اول اثر کلک نه د سامونیا گوشی ثبت بکید",
+                  secDelayTitle = "تاخیر د قفل دوبارته برنامه",
+                  secDelaySub = "زمانی که بعد یه دفعه واکلیدن، برنامه هنی رمز نخوا:",
+                  delayImm = "فوری",
+                  delay2m = "۲ دقیقه",
+                  delay4m = "۴ دقیقه",
+                  delay6m = "۶ دقیقه",
+                  delay10m = "۱۰ دقیقه",
+                  secIconTitle = "آلشت و قایم کردن آیکون برنامه",
+                  iconPadlock = "قفل زرد",
+                  iconCalculator = "ماشین‌حساب",
+                  iconChangedToast = "آیکون برنامه آلشت بی",
+                  secSecurityTitle = "امنیت، پس‌زمینه و عکس فضول‌گیر",
+                  recentsTitle = "قایم کردن د برنامیا پس‌زمینه (Recents)",
+                  recentsSub = "نشون دئن صفحه قفل د لیست برنامیا اخیر",
+                  intruderTitle = "سلفی فضول‌گیر (پین، الگو و اثر کلک اشتوا)",
+                  intruderSubPrefix = "ذخیره یواشکی د گالری بعد ۳ دفعه خطا",
+                  vibrateTitle = "ویبره کوتا موقع خطا",
+                  vibrateSub = "لرزش گوشی موقع زئن رمز یا اثر کلک اشتوا",
+                  uninstallTitle = "محافظ پاک کردن برنامه (Uninstall Protection)",
+                  uninstallSub = "نهاشتن پاک بیئن NowLock بی زئن رمز",
+                  secThemeLangTitle = "تم و زون برنامه",
+                  themeSystem = "سیستم",
+                  themeLight = "روشن",
+                  themeDark = "تاریک",
+                  selectLangLabel = "انتخاب زون کل برنامه:",
+                  aboutSubtitle = "طراحی و مهندسی توسط حامد و هوش مصنوعی جمینای (Gemini)",
+                  aboutBody = "وه NowLock خوش اومئیت. ایما (حامد و هوش مصنوعی جمینای) ای برنامه نه سی حفاظت زو، سبک و مطمئن د برنامیا شخصی شما د اندروید ساختیمه. NowLock بی کم کردن سرعت گوشی یا مصرف باتری، امنیت کامل حریم شخصی شمانه تامین میکنه.",
+                  aboutTechTitle = "فناوری‌یا و زبان‌یا برنامه‌نویسی:",
+                  aboutTechBullets = listOf(
+                      "• زون برنامه‌نویسی Kotlin: ساخت ۱۰۰٪ بومی سی بالاترین سرعت و پایداری د اندروید.",
+                      "• فریم‌ورک Jetpack Compose & Material 3: ظاهر مدرن، روان و هماهنگ وا همه صفحه‌یا.",
+                      "• رمزنگاری SHA-256 و AndroidX Biometric: حفاظت سخت‌افزاری د رمز و اثر کلک.",
+                      "• زیرساخت ابری GitHub Actions & Python CI/CD: ساخت و انتشار خودکار نسخه‌یا رسمی."
+                  ),
+                  aboutPrivacyTitle = "حریم شخصی و امنیت اطلاعات:",
+                  aboutPrivacySummary = "همه اطلاعات، رمزیا و سامونیا شما ۱۰۰٪ آفلاین فقط رو گوشی خوتون دیره و سی هیچ سروری فرسائه نمیبو.",
+                  aboutShowMoreBtn = "نشون دئن بیشتر (متن کامل حریم شخصی و شرایط) ⬅",
+                  aboutContactTitle = "ارتباط مستقیم وا سازنده (حامد):",
+                  aboutUpdateBtn = "سیل کردن بروزرسانی برنامه",
+                  updateVisitSiteMsg = "وه سایت توسعه‌دهنده سر بزنیت:",
+                  lockPromptPin = "پین‌کدنه بزنیت",
+                  lockPromptPattern = "الگونه بی ورداشتن کلک بکشیت",
+                  lockWrongAttempt = "رمز یا اثر کلک اشتواس، هنی تلاش بکید",
+                  lockExitBtn = "درومئن",
+                  biometricSubtitle = "سنسور اثر کلک نه لمس بکید",
+                  biometricUsePin = "استفاده د پین‌کد",
+                  biometricUsePattern = "استفاده د الگو",
+                  dlgPinTitle = "نهائن پین‌کد ۴ رقمی",
+                  dlgPinSub = "پین‌کد ۴ رقمی دلخواه خوتونه بزنیت:",
+                  dlgPatternTitle = "نهائن الگوی قفل (کمترین ۴ نقطه)",
+                  dlgPatternSub = "کلک خوتونه بی ورداشتن رو کمترین ۴ نقطه بکشیت:",
+                  btnSave = "ذخیره",
+                  btnCancel = "انصراف",
+                  btnClear = "پاک کردن و کشیدن د نو",
+                  btnClose = "بستن",
+                  newAppNotifTitle = "برنامه جدید نصب بی: ",
+                  newAppNotifBody = "میخایت ای برنامه وا NowLock قفل بوئه؟",
+                  newAppActionLock = "قفل کردن",
+                  newAppActionDismiss = "رد کردن"
+              )
+              AppLang.MAZ -> UiStrings(
+                  tabApps = "برنامه‌ئون",
+                  tabSettings = "تنظیمات",
+                  tabAbout = "برنامه خوری",
+                  statusNoPassword = "⚠ بی رمز",
+                  statusNeedsPerm = "⚠ مجوز خانه",
+                  statusActive = "✓ محافظ فعاله",
+                  permBannerTitle = "تا قفل کامل کار هاکنه، هر دکمه ره بزنین تا مستقیم مجوز صفحه وا بوو:",
+                  perm1Acc = "۱. آنی سرویس",
+                  perm2Usage = "۲. مصرف آمار",
+                  perm3Overlay = "۳. شناور هارشا",
+                  perm4Camera = "۴. سلفی دوربین",
+                  searchPlaceholder = "برنامه پدا هاکردن...",
+                  filterAll = "همه",
+                  filterLocked = "قفل‌بئی",
+                  filterUnlocked = "قفل‌نبئی",
+                  selfAppBadge = "شِه برنامه",
+                  secAuthTitle = "قفل روش و رمز مدیریت",
+                  modePin = "پین‌کد (PIN)",
+                  modePattern = "پترن (الگو)",
+                  btnSetPin = "پین‌کد بی‌یشتن",
+                  btnChangePin = "پین‌کد عوض هاکردن",
+                  btnSetPattern = "الگو بی‌یشتن",
+                  btnChangePattern = "الگو عوض هاکردن",
+                  fpTitle = "انگشتِ اثر جا هم‌زمان واکردن",
+                  fpSub = "پین‌کد یا الگو پلی سریع واکردن",
+                  fpEnrollToast = "اول انگشت اثر ره گوشی تنظیمات دله ثبت هاکنین",
+                  secDelayTitle = "دوباره قفل بَیّنِ تاخیر",
+                  secDelaySub = "زمانی که اتا بار درست وارد بَیّی په، برنامه اَی رمز نخائه:",
+                  delayImm = "فوری",
+                  delay2m = "۲ دقیقه",
+                  delay4m = "۴ دقیقه",
+                  delay6m = "۶ دقیقه",
+                  delay10m = "۱۰ دقیقه",
+                  secIconTitle = "برنامه آیکون ره عوض و مخفی هاکردن",
+                  iconPadlock = "زرد قفل",
+                  iconCalculator = "ماشین‌حساب",
+                  iconChangedToast = "برنامه آیکون عوض بَیّه",
+                  secSecurityTitle = "امنیت، پس‌زمینه و فضول‌گیر عکس",
+                  recentsTitle = "پس‌زمینه برنامه‌ئون دله مخفی هاکردن (Recents)",
+                  recentsSub = "قفل آیکون صفحه ره اخیر برنامه‌ئون لیست دله سراق هاده",
+                  intruderTitle = "فضول‌گیر سلفی (غلط پین، الگو و انگشت اثر)",
+                  intruderSubPrefix = "۳ بار اشتباه په یواشکی گالری دله ذخیره بونه",
+                  vibrateTitle = "اشتباه رمز په کچیک ویبره",
+                  vibrateSub = "غلط رمز یا انگشت اثر زوئن گدر گوشی بلرزه",
+                  uninstallTitle = "پاک بَیّن محافظ (Uninstall Protection)",
+                  uninstallSub = "نَیله NowLock ره بی رمز پاک هاکنن",
+                  secThemeLangTitle = "برنامه تم و زوون",
+                  themeSystem = "سیستم",
+                  themeLight = "روشن",
+                  themeDark = "تاریک",
+                  selectLangLabel = "کل برنامه زوون ره انتخاب هاکنین:",
+                  aboutSubtitle = "طراحی و مهندسی حامد و جمینای (Gemini) هوش مصنوعی جا",
+                  aboutBody = "NowLock ره خوش بمونی. اِما (حامد و جمینای هوش مصنوعی) اینتا محصول ره بساتمی تا سریع‌ترین، سبک‌ترین و مطمئن‌ترین محافظتی سپر شمه شخصی برنامه‌ئون وسّه اندروید دله بائه. NowLock بی اینکه گوشی سرعت ره کم هاکنه یا باتری بخره، شمه حریم خصوصی امنیت ره کامل حفظ کنده.",
+                  aboutTechTitle = "مهندسی زیرساخت و برنامه‌نویسی فناوری‌ئون:",
+                  aboutTechBullets = listOf(
+                      "• Kotlin برنامه‌نویسی زوون: ۱۰۰٪ بومی (Native) بالاترین سرعت و پایداری وسّه اندروید دله.",
+                      "• Jetpack Compose & Material 3: مدرن، روان و همه صفحه‌ئون جا سازگار رابط کاربری.",
+                      "• SHA-256 رمزنگاری و AndroidX Biometric: رمز و انگشت اثر سخت‌افزاری حفاظت.",
+                      "• GitHub Actions & Python CI/CD: خودکار بساتن و تنک هاکردن رسمی نسخه‌ئون."
+                  ),
+                  aboutPrivacyTitle = "شخصی حریم و اطلاعات امنیت:",
+                  aboutPrivacySummary = "شمه همه اطلاعات، رمزها و تنظیمات ۱۰۰٪ آفلاین فقط شمه گوشی حافظه دله موندنه و هیچ سروری وسّه رسنی نونه.",
+                  aboutShowMoreBtn = "ویشته هارشا (حریم خصوصی و شرایط کامل متن) ⬅",
+                  aboutContactTitle = "سازنده جا مستقیم ارتباط (حامد):",
+                  aboutUpdateBtn = "برنامه بروزرسانی ره هارشا",
+                  updateVisitSiteMsg = "سازنده سایت ره سر بزنین:",
+                  lockPromptPin = "پین‌کد ره بزنین",
+                  lockPromptPattern = "انگشت ره بیتن بی قفل الگو ره بکشین",
+                  lockWrongAttempt = "رمز یا انگشت اثر اشتباه هسه، اَی تلاش هاکنین",
+                  lockExitBtn = "در بوردن",
+                  biometricSubtitle = "انگشت اثر سنسور ره لمس هاکنین",
+                  biometricUsePin = "پین‌کد جا استفاده هاکن",
+                  biometricUsePattern = "الگو جا استفاده هاکن",
+                  dlgPinTitle = "۴ رقمی پین‌کد بی‌یشتن",
+                  dlgPinSub = "شِه دلخواه ۴ رقمی پین‌کد ره بزنین:",
+                  dlgPatternTitle = "قفل الگو بی‌یشتن (کمترین ۴ نقطه)",
+                  dlgPatternSub = "شِه انگشت ره بی بیتن کمترین ۴ نقطه سر بکشین:",
+                  btnSave = "ذخیره هاکردن",
+                  btnCancel = "انصراف",
+                  btnClear = "پاک هاکردن و اَی کشیدن",
+                  btnClose = "دَوِستن",
+                  newAppNotifTitle = "جدید برنامه نصب بَیّه: ",
+                  newAppNotifBody = "خانی اینتا برنامه ره NowLock جا قفل هاکنی؟",
+                  newAppActionLock = "قفل هاکردن",
+                  newAppActionDismiss = "رد هاکردن"
+              )
+          }
           enum class LockComboMode {
               PIN_FINGERPRINT,
-              PATTERN_FINGERPRINT;
-              fun getTitle(lang: AppLang): String = when (this) {
-                  PIN_FINGERPRINT -> when (lang) {
-                      AppLang.FA -> "پین‌کد (PIN)"
-                      AppLang.EN -> "PIN Code"
-                      AppLang.AZ -> "پین‌کود (PIN)"
-                      AppLang.LOR -> "پین‌کد (PIN)"
-                      AppLang.MAZ -> "پین‌کد (PIN)"
-                  }
-                  PATTERN_FINGERPRINT -> when (lang) {
-                      AppLang.FA -> "پترن (الگو)"
-                      AppLang.EN -> "Pattern"
-                      AppLang.AZ -> "اولگو (Pattern)"
-                      AppLang.LOR -> "پترن (الگو)"
-                      AppLang.MAZ -> "پترن (الگو)"
-                  }
-              }
+              PATTERN_FINGERPRINT
           }
           enum class AppIconMode {
               PADLOCK,
@@ -697,67 +1251,77 @@ jobs:
               MIN_4(4),
               MIN_6(6),
               MIN_10(10);
-              fun getLabel(lang: AppLang): String = when (this) {
-                  IMMEDIATE -> if (lang == AppLang.EN) "Immediate" else "فوری"
-                  MIN_2 -> if (lang == AppLang.EN) "2 Min" else "۲ دقیقه"
-                  MIN_4 -> if (lang == AppLang.EN) "4 Min" else "۴ دقیقه"
-                  MIN_6 -> if (lang == AppLang.EN) "6 Min" else "۶ دقیقه"
-                  MIN_10 -> if (lang == AppLang.EN) "10 Min" else "۱۰ دقیقه"
+              fun getLabel(s: UiStrings): String = when (this) {
+                  IMMEDIATE -> s.delayImm
+                  MIN_2 -> s.delay2m
+                  MIN_4 -> s.delay4m
+                  MIN_6 -> s.delay6m
+                  MIN_10 -> s.delay10m
               }
           }
           enum class NowLockNavTab {
               APPS,
               SETTINGS,
               ABOUT;
-              fun getTitle(lang: AppLang): String = when (this) {
-                  APPS -> when (lang) {
-                      AppLang.FA -> "برنامه‌ها"
-                      AppLang.EN -> "Apps"
-                      AppLang.AZ -> "برنامه‌لر"
-                      AppLang.LOR -> "برنامیا"
-                      AppLang.MAZ -> "برنامه‌ئون"
-                  }
-                  SETTINGS -> when (lang) {
-                      AppLang.FA -> "تنظیمات"
-                      AppLang.EN -> "Settings"
-                      AppLang.AZ -> "تنظیمات"
-                      AppLang.LOR -> "سامونیا"
-                      AppLang.MAZ -> "تنظیمات"
-                  }
-                  ABOUT -> when (lang) {
-                      AppLang.FA -> "درباره برنامه"
-                      AppLang.EN -> "About"
-                      AppLang.AZ -> "برنامه حاقّیندا"
-                      AppLang.LOR -> "دباره برنامه"
-                      AppLang.MAZ -> "برنامه خوری"
-                  }
+              fun getTitle(s: UiStrings): String = when (this) {
+                  APPS -> s.tabApps
+                  SETTINGS -> s.tabSettings
+                  ABOUT -> s.tabAbout
               }
           }
           enum class AppFilterMode {
               ALL,
               LOCKED,
               UNLOCKED;
-              fun getTitle(lang: AppLang): String = when (this) {
-                  ALL -> when (lang) {
-                      AppLang.EN -> "All"
-                      AppLang.AZ -> "هامیسی"
-                      else -> "همه"
-                  }
-                  LOCKED -> when (lang) {
-                      AppLang.FA -> "قفل‌شده"
-                      AppLang.EN -> "Locked"
-                      AppLang.AZ -> "قفل‌لانمیش"
-                      AppLang.LOR -> "قفل‌بیه‌یا"
-                      AppLang.MAZ -> "قفل‌بئی"
-                  }
-                  UNLOCKED -> when (lang) {
-                      AppLang.FA -> "قفل‌نشده"
-                      AppLang.EN -> "Unlocked"
-                      AppLang.AZ -> "آچیق"
-                      AppLang.LOR -> "قفل‌نبیه‌یا"
-                      AppLang.MAZ -> "قفل‌نبئی"
-                  }
+              fun getTitle(s: UiStrings): String = when (this) {
+                  ALL -> s.filterAll
+                  LOCKED -> s.filterLocked
+                  UNLOCKED -> s.filterUnlocked
               }
+          }
+          // Direct Deep-Link Permission Helpers (Takes user directly to NowLock's specific toggle switch!)
+          fun openDirectAccessibilitySettings(context: Context) {
+              val comp = ComponentName(context.packageName, NowLockAccessibilityService::class.java).flattenToString()
+              val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
+                  val bundle = Bundle()
+                  bundle.putString(":settings:fragment_args_key", comp)
+                  putExtra(":settings:fragment_args_key", comp)
+                  putExtra(":settings:show_fragment_args", bundle)
+                  addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+              }
+              runCatching { context.startActivity(intent) }
+          }
+          fun openDirectUsageAccessSettings(context: Context) {
+              val directIntent = Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS).apply {
+                  data = Uri.fromParts("package", context.packageName, null)
+                  putExtra(":settings:fragment_args_key", context.packageName)
+                  val bundle = Bundle()
+                  bundle.putString(":settings:fragment_args_key", context.packageName)
+                  putExtra(":settings:show_fragment_args", bundle)
+                  addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+              }
+              runCatching {
+                  context.startActivity(directIntent)
+              }.onFailure {
+                  val fallback = Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS).apply {
+                      putExtra(":settings:fragment_args_key", context.packageName)
+                      addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                  }
+                  runCatching { context.startActivity(fallback) }
+              }
+          }
+          fun openDirectOverlaySettings(context: Context) {
+              val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${context.packageName}")).apply {
+                  putExtra(":settings:fragment_args_key", context.packageName)
+                  addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+              }
+              runCatching { context.startActivity(intent) }
+          }
+          fun openDirectAppDetailsSettings(context: Context) {
+              val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", context.packageName, null)).apply {
+                  addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+              }
+              runCatching { context.startActivity(intent) }
           }
           fun configureNotchAndGlassBars(activity: Activity, isDark: Boolean) {
               runCatching {
@@ -778,7 +1342,7 @@ jobs:
                   controller.isAppearanceLightNavigationBars = !isDark
               }
           }
-          // Happ VPN Inspired Seamless Multi-Stop Ambient Background (100% crash-safe vertical gradient)
+          // Happ VPN Inspired Seamless Multi-Stop Ambient Background
           @Composable
           fun HappAmbientBackground(
               isDark: Boolean,
@@ -813,14 +1377,14 @@ jobs:
                   content = content
               )
           }
-          // Crash-Proof Per-Character Soft Pastel RGB Animated Typography for "NowLock"
+          // Per-Character Soft Pastel RGB Animated Typography for "NowLock"
           private val SOFT_RGB_PALETTE = listOf(
-              Color(0xFF67E8F9), // Soft Sky Cyan
-              Color(0xFF818CF8), // Periwinkle Indigo
-              Color(0xFFC084FC), // Soft Orchid Violet
-              Color(0xFFF472B6), // Pastel Rose
-              Color(0xFFFBBF24), // Soft Warm Gold
-              Color(0xFF5EEAD4)  // Soft Mint Aqua
+              Color(0xFF67E8F9),
+              Color(0xFF818CF8),
+              Color(0xFFC084FC),
+              Color(0xFFF472B6),
+              Color(0xFFFBBF24),
+              Color(0xFF5EEAD4)
           )
           private fun sampleSmoothRgbPalette(position: Float): Color {
               val size = SOFT_RGB_PALETTE.size
@@ -902,6 +1466,112 @@ jobs:
                           )
                       )
               )
+          }
+          // Instant Overlay Lock Bridge (Attaches a visible SYSTEM_ALERT_WINDOW shield in 0ms so Android 14/15 ALWAYS allows LockScreenActivity to launch over third-party apps!)
+          object OverlayLockBridge {
+              private val mainHandler = Handler(Looper.getMainLooper())
+              private var shieldView: FrameLayout? = null
+              private var isShieldAttached = false
+              fun showShieldAndLaunchLockActivity(ctx: Context, targetPkg: String) {
+                  mainHandler.post {
+                      val appCtx = ctx.applicationContext
+                      if (Settings.canDrawOverlays(appCtx) && !isShieldAttached && !LockScreenActivity.isShowing) {
+                          runCatching {
+                              val wm = appCtx.getSystemService(Context.WINDOW_SERVICE) as? WindowManager
+                              if (wm != null) {
+                                  val isDark = AppRepo.isDarkEffective(appCtx)
+                                  val bgColor = if (isDark) android.graphics.Color.parseColor("#181856") else android.graphics.Color.parseColor("#F2F3F9")
+                                  val txtColor = if (isDark) android.graphics.Color.WHITE else android.graphics.Color.parseColor("#1C1E26")
+                                  val dp = appCtx.resources.displayMetrics.density
+                                  val root = FrameLayout(appCtx).apply {
+                                      setBackgroundColor(bgColor)
+                                      val col = LinearLayout(appCtx).apply {
+                                          orientation = LinearLayout.VERTICAL
+                                          gravity = Gravity.CENTER
+                                          val img = ImageView(appCtx).apply {
+                                              setImageResource(R.drawable.ic_nowlock_logo)
+                                          }
+                                          addView(img, LinearLayout.LayoutParams((76 * dp).toInt(), (76 * dp).toInt()))
+                                          val title = TextView(appCtx).apply {
+                                              text = "NowLock"
+                                              textSize = 22f
+                                              setTextColor(txtColor)
+                                              gravity = Gravity.CENTER
+                                              setPadding(0, (14 * dp).toInt(), 0, (18 * dp).toInt())
+                                          }
+                                          addView(title)
+                                          val btn = AndroidButton(appCtx).apply {
+                                              val s = getStrings(AppRepo.getAppLang())
+                                              text = if (AppRepo.getComboMode() == LockComboMode.PATTERN_FINGERPRINT) s.lockPromptPattern else s.lockPromptPin
+                                              setOnClickListener {
+                                                  startLockActivityNow(appCtx, targetPkg)
+                                              }
+                                          }
+                                          addView(btn, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+                                      }
+                                      addView(col, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT, Gravity.CENTER))
+                                      setOnClickListener {
+                                          startLockActivityNow(appCtx, targetPkg)
+                                      }
+                                  }
+                                  val lp = WindowManager.LayoutParams(
+                                      WindowManager.LayoutParams.MATCH_PARENT,
+                                      WindowManager.LayoutParams.MATCH_PARENT,
+                                      WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+                                      WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                                          WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON,
+                                      PixelFormat.OPAQUE
+                                  )
+                                  wm.addView(root, lp)
+                                  shieldView = root
+                                  isShieldAttached = true
+                              }
+                          }
+                      }
+                      // Launch LockScreenActivity immediately (while our TYPE_APPLICATION_OVERLAY window is visible on screen, bypassing Android 14/15 BAL restrictions!)
+                      startLockActivityNow(appCtx, targetPkg)
+                      mainHandler.postDelayed({
+                          if (!LockScreenActivity.isShowing && isShieldAttached) {
+                              startLockActivityNow(appCtx, targetPkg)
+                          }
+                      }, 120L)
+                  }
+              }
+              private fun startLockActivityNow(ctx: Context, targetPkg: String) {
+                  val intent = Intent(ctx, LockScreenActivity::class.java).apply {
+                      addFlags(
+                          Intent.FLAG_ACTIVITY_NEW_TASK or
+                          Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                          Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                          Intent.FLAG_ACTIVITY_NO_ANIMATION or
+                          Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS
+                      )
+                      putExtra("target_pkg", targetPkg)
+                  }
+                  runCatching {
+                      val pi = PendingIntent.getActivity(
+                          ctx,
+                          targetPkg.hashCode(),
+                          intent,
+                          PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                      )
+                      pi.send()
+                  }
+                  runCatching { ctx.startActivity(intent) }
+              }
+              fun dismissShield(ctx: Context) {
+                  mainHandler.post {
+                      val v = shieldView ?: return@post
+                      if (isShieldAttached) {
+                          runCatching {
+                              val wm = ctx.applicationContext.getSystemService(Context.WINDOW_SERVICE) as? WindowManager
+                              wm?.removeViewImmediate(v)
+                          }
+                      }
+                      isShieldAttached = false
+                      shieldView = null
+                  }
+              }
           }
           // Real Silent Front-Camera Intruder Photo Saver -> Saves directly to Phone Gallery (Pictures/NowLock_Intruders)
           object IntruderPhotoSaver {
@@ -1040,6 +1710,7 @@ jobs:
               private const val KEY_RELOCK_MINUTES = "nowlock_relock_minutes"
               private const val KEY_RECENTS_PRIVACY = "nowlock_recents_privacy"
               private const val KEY_LOCKED_PKGS = "nowlock_locked_pkgs"
+              private const val KEY_LOCKED_PKGS_CSV = "nowlock_locked_pkgs_csv"
               private const val KEY_THEME_MODE = "nowlock_theme_mode"
               private const val KEY_APP_LANG = "nowlock_app_lang"
               private const val KEY_VIBRATE = "nowlock_vibrate_on_error"
@@ -1047,17 +1718,39 @@ jobs:
               private const val KEY_INTRUDER_COUNT = "nowlock_intruder_count"
               private const val KEY_UNINSTALL = "nowlock_uninstall_protect"
               private lateinit var prefs: SharedPreferences
+              private val lockedMemorySet = ConcurrentHashMap.newKeySet<String>()
               val unlockedSession = ConcurrentHashMap.newKeySet<String>()
               val unlockTimestamps = ConcurrentHashMap<String, Long>()
               @Volatile var lastActivePackage: String = ""
               @Volatile var lastLockShownTime: Long = 0L
               fun init(ctx: Context) {
                   if (!::prefs.isInitialized) {
-                      prefs = ctx.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                      val storageCtx = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && ctx.isDeviceProtectedStorage) {
+                          ctx
+                      } else {
+                          ctx.applicationContext ?: ctx
+                      }
+                      prefs = storageCtx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                      reloadLockedPackagesFromPrefs()
+                  }
+              }
+              private fun reloadLockedPackagesFromPrefs() {
+                  val csv = prefs.getString(KEY_LOCKED_PKGS_CSV, null)
+                  if (csv != null) {
+                      lockedMemorySet.clear()
+                      csv.split(",").map { it.trim() }.filter { it.isNotEmpty() }.forEach { lockedMemorySet.add(it) }
+                  } else {
+                      val legacy = prefs.getStringSet(KEY_LOCKED_PKGS, emptySet()) ?: emptySet()
+                      lockedMemorySet.clear()
+                      lockedMemorySet.addAll(legacy)
+                      if (legacy.isNotEmpty()) {
+                          prefs.edit().putString(KEY_LOCKED_PKGS_CSV, legacy.joinToString(",")).commit()
+                      }
                   }
               }
               fun getLockedPackages(): Set<String> {
-                  return prefs.getStringSet(KEY_LOCKED_PKGS, emptySet()) ?: emptySet()
+                  reloadLockedPackagesFromPrefs()
+                  return lockedMemorySet.toSet()
               }
               fun isPinSet(): Boolean = prefs.getString(KEY_PIN_HASH, null) != null
               fun isPatternSet(): Boolean = prefs.getString(KEY_PATTERN_HASH, null) != null
@@ -1113,15 +1806,21 @@ jobs:
                   }
               }
               fun toggleAppLock(pkg: String, lock: Boolean) {
-                  val current = getLockedPackages().toMutableSet()
+                  reloadLockedPackagesFromPrefs()
                   if (lock) {
-                      current.add(pkg)
+                      lockedMemorySet.add(pkg)
+                      unlockedSession.remove(pkg)
+                      unlockTimestamps.remove(pkg)
                   } else {
-                      current.remove(pkg)
+                      lockedMemorySet.remove(pkg)
                       unlockedSession.remove(pkg)
                       unlockTimestamps.remove(pkg)
                   }
-                  prefs.edit().putStringSet(KEY_LOCKED_PKGS, current).commit()
+                  val csv = lockedMemorySet.joinToString(",")
+                  prefs.edit()
+                      .putString(KEY_LOCKED_PKGS_CSV, csv)
+                      .putStringSet(KEY_LOCKED_PKGS, HashSet(lockedMemorySet))
+                      .commit()
               }
               fun markUnlocked(pkg: String) {
                   val now = System.currentTimeMillis()
@@ -1153,8 +1852,14 @@ jobs:
                   }
               }
               fun evaluateForegroundPackage(pkg: String, myPkg: String): Boolean {
-                  if (pkg.isBlank()) return false
-                  if (pkg.contains("systemui") || pkg.contains("inputmethod") || pkg.contains("keyboard") || pkg.contains("biometric") || pkg.contains("permissioncontroller")) {
+                  if (pkg.isBlank() || pkg == myPkg) return false
+                  if (pkg.contains("systemui") ||
+                      pkg.contains("inputmethod") ||
+                      pkg.contains("keyboard") ||
+                      pkg.contains("biometric") ||
+                      pkg.contains("permissioncontroller") ||
+                      pkg == "android"
+                  ) {
                       return false
                   }
                   if (!isAnyPasswordSet()) return false
@@ -1164,7 +1869,7 @@ jobs:
                       if (delayMin <= 0) {
                           if (isHomeOrLauncher) {
                               unlockedSession.clear()
-                          } else if (pkg != myPkg) {
+                          } else {
                               unlockedSession.remove(lastActivePackage)
                           }
                       } else {
@@ -1175,9 +1880,6 @@ jobs:
                       }
                   }
                   lastActivePackage = pkg
-                  if (pkg == myPkg && LockScreenActivity.isShowing) {
-                      return false
-                  }
                   if (isUninstallProtectionEnabled() && (pkg.contains("packageinstaller") || pkg.contains("uninstaller"))) {
                       return !isWithinGracePeriod(pkg)
                   }
@@ -1187,21 +1889,24 @@ jobs:
               }
               fun launchLockScreenIfNeeded(ctx: Context, targetPkg: String) {
                   val now = System.currentTimeMillis()
-                  if (now - lastLockShownTime < 350L && LockScreenActivity.activeTargetPkg == targetPkg && LockScreenActivity.isShowing) {
+                  if (now - lastLockShownTime < 300L && LockScreenActivity.activeTargetPkg == targetPkg && LockScreenActivity.isShowing) {
                       return
                   }
                   lastLockShownTime = now
-                  val intent = Intent(ctx, LockScreenActivity::class.java).apply {
-                      addFlags(
-                          Intent.FLAG_ACTIVITY_NEW_TASK or
-                          Intent.FLAG_ACTIVITY_CLEAR_TOP or
-                          Intent.FLAG_ACTIVITY_SINGLE_TOP or
-                          Intent.FLAG_ACTIVITY_NO_ANIMATION or
-                          Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS
-                      )
-                      putExtra("target_pkg", targetPkg)
+                  if (targetPkg == ctx.packageName) {
+                      val intent = Intent(ctx, LockScreenActivity::class.java).apply {
+                          addFlags(
+                              Intent.FLAG_ACTIVITY_NEW_TASK or
+                              Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                              Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                              Intent.FLAG_ACTIVITY_NO_ANIMATION
+                          )
+                          putExtra("target_pkg", targetPkg)
+                      }
+                      runCatching { ctx.startActivity(intent) }
+                  } else {
+                      OverlayLockBridge.showShieldAndLaunchLockActivity(ctx, targetPkg)
                   }
-                  runCatching { ctx.startActivity(intent) }
               }
               fun isVibrationEnabled(): Boolean = prefs.getBoolean(KEY_VIBRATE, true)
               fun setVibrationEnabled(v: Boolean) = prefs.edit().putBoolean(KEY_VIBRATE, v).commit()
@@ -1265,45 +1970,16 @@ jobs:
               }
               return mode == AppOpsManager.MODE_ALLOWED
           }
-          // Unified Dual-Engine Accessibility + UsageStats Service (Managed by Android OS, zero FGS crash risk!)
-          class NowLockAccessibilityService : AccessibilityService() {
-              private var wm: WindowManager? = null
-              private var recentsCoverView: FrameLayout? = null
-              private var isRecentsCoverAttached = false
-              private val mainHandler = Handler(Looper.getMainLooper())
-              private var isPollingUsageStats = false
-              private val usageStatsPollRunnable = object : Runnable {
-                  override fun run() {
-                      if (!isPollingUsageStats) return
-                      runCatching { checkForegroundAppViaUsageStats() }
-                      mainHandler.postDelayed(this, 240L)
-                  }
-              }
-              private val screenOffReceiver = object : BroadcastReceiver() {
-                  override fun onReceive(context: Context?, intent: Intent?) {
-                      if (intent?.action == Intent.ACTION_SCREEN_OFF) {
-                          AppRepo.clearAllUnlockedSessionsOnScreenOff()
-                          hideRecentsPrivacyShield()
-                      }
-                  }
-              }
-              override fun onServiceConnected() {
-                  super.onServiceConnected()
-                  AppRepo.init(this)
-                  wm = getSystemService(Context.WINDOW_SERVICE) as? WindowManager
-                  runCatching { registerReceiver(screenOffReceiver, IntentFilter(Intent.ACTION_SCREEN_OFF)) }
-                  isPollingUsageStats = true
-                  mainHandler.post(usageStatsPollRunnable)
-              }
-              private fun checkForegroundAppViaUsageStats() {
-                  if (!isUsageStatsPermissionGranted(this)) return
-                  val usm = getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager ?: return
-                  val now = System.currentTimeMillis()
-                  val events = usm.queryEvents(now - 2500L, now) ?: return
+          fun pollTopPackageViaUsageStats(context: Context): Pair<String, String> {
+              if (!isUsageStatsPermissionGranted(context)) return "" to ""
+              val usm = context.getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager ?: return "" to ""
+              val now = System.currentTimeMillis()
+              val events = usm.queryEvents(now - 8000L, now)
+              var latestPkg = ""
+              var latestClass = ""
+              var latestTime = 0L
+              if (events != null) {
                   val event = UsageEvents.Event()
-                  var latestPkg = ""
-                  var latestClass = ""
-                  var latestTime = 0L
                   while (events.hasNextEvent()) {
                       events.getNextEvent(event)
                       if (event.eventType == UsageEvents.Event.ACTIVITY_RESUMED ||
@@ -1316,31 +1992,147 @@ jobs:
                           }
                       }
                   }
-                  if (latestPkg == packageName && latestClass.contains("LockScreenActivity")) return
-                  if (latestPkg.isNotEmpty() && AppRepo.evaluateForegroundPackage(latestPkg, packageName)) {
-                      AppRepo.launchLockScreenIfNeeded(this, latestPkg)
+              }
+              return latestPkg to latestClass
+          }
+          // Helper to post "New App Installed: Lock with NowLock?" notification
+          object NewAppNotificationHelper {
+              private const val CHANNEL_ID = "nowlock_new_app_prompt"
+              fun showLockPromptNotification(context: Context, newPkg: String) {
+                  AppRepo.init(context)
+                  if (newPkg == context.packageName || AppRepo.getLockedPackages().contains(newPkg)) return
+                  val pm = context.packageManager
+                  val appLabel = runCatching {
+                      val ai = pm.getApplicationInfo(newPkg, 0)
+                      pm.getApplicationLabel(ai).toString()
+                  }.getOrNull() ?: return
+                  val s = getStrings(AppRepo.getAppLang())
+                  val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                      val chan = NotificationChannel(
+                          CHANNEL_ID,
+                          "NowLock New App Prompt",
+                          NotificationManager.IMPORTANCE_HIGH
+                      )
+                      nm.createNotificationChannel(chan)
                   }
+                  val notifId = newPkg.hashCode().and(0x7FFFFFFF)
+                  val lockIntent = Intent(context, NewAppLockActionReceiver::class.java).apply {
+                      action = "io.nowlock.app.ACTION_LOCK_NEW_APP"
+                      putExtra("target_pkg", newPkg)
+                      putExtra("notif_id", notifId)
+                  }
+                  val dismissIntent = Intent(context, NewAppLockActionReceiver::class.java).apply {
+                      action = "io.nowlock.app.ACTION_DISMISS_NEW_APP"
+                      putExtra("notif_id", notifId)
+                  }
+                  val lockPi = PendingIntent.getBroadcast(
+                      context,
+                      notifId,
+                      lockIntent,
+                      PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                  )
+                  val dismissPi = PendingIntent.getBroadcast(
+                      context,
+                      notifId + 1,
+                      dismissIntent,
+                      PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                  )
+                  val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                      Notification.Builder(context, CHANNEL_ID)
+                  } else {
+                      @Suppress("DEPRECATION")
+                      Notification.Builder(context)
+                  }
+                  val notification = builder
+                      .setSmallIcon(R.drawable.ic_nowlock_logo)
+                      .setContentTitle(s.newAppNotifTitle + appLabel)
+                      .setContentText(s.newAppNotifBody)
+                      .setAutoCancel(true)
+                      .addAction(Notification.Action.Builder(R.drawable.ic_nowlock_logo, s.newAppActionLock, lockPi).build())
+                      .addAction(Notification.Action.Builder(R.drawable.ic_nowlock_logo, s.newAppActionDismiss, dismissPi).build())
+                      .build()
+                  runCatching { nm.notify(notifId, notification) }
+              }
+          }
+          class NewAppInstallReceiver : BroadcastReceiver() {
+              override fun onReceive(context: Context, intent: Intent?) {
+                  if (intent?.action != Intent.ACTION_PACKAGE_ADDED) return
+                  if (intent.getBooleanExtra(Intent.EXTRA_REPLACING, false)) return
+                  val pkg = intent.data?.schemeSpecificPart ?: return
+                  NewAppNotificationHelper.showLockPromptNotification(context, pkg)
+              }
+          }
+          class NewAppLockActionReceiver : BroadcastReceiver() {
+              override fun onReceive(context: Context, intent: Intent?) {
+                  AppRepo.init(context)
+                  val notifId = intent?.getIntExtra("notif_id", 0) ?: 0
+                  val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+                  if (notifId != 0) nm?.cancel(notifId)
+                  if (intent?.action == "io.nowlock.app.ACTION_LOCK_NEW_APP") {
+                      val pkg = intent.getStringExtra("target_pkg") ?: return
+                      AppRepo.toggleAppLock(pkg, true)
+                      val s = getStrings(AppRepo.getAppLang())
+                      Toast.makeText(context, "🔒 ${s.filterLocked}: $pkg", Toast.LENGTH_SHORT).show()
+                  }
+              }
+          }
+          // Engine 1: Instant 0ms Accessibility + UsageStats Hybrid Service (Auto-started by Android OS on boot!)
+          class NowLockAccessibilityService : AccessibilityService() {
+              private val mainHandler = Handler(Looper.getMainLooper())
+              private var isPolling = false
+              private val pollRunnable = object : Runnable {
+                  override fun run() {
+                      if (!isPolling) return
+                      runCatching {
+                          val (latestPkg, latestCls) = pollTopPackageViaUsageStats(this@NowLockAccessibilityService)
+                          if (latestPkg.isNotEmpty() && !(latestPkg == packageName && latestCls.contains("LockScreenActivity"))) {
+                              if (AppRepo.evaluateForegroundPackage(latestPkg, packageName)) {
+                                  AppRepo.launchLockScreenIfNeeded(this@NowLockAccessibilityService, latestPkg)
+                              }
+                          }
+                      }
+                      mainHandler.postDelayed(this, 200L)
+                  }
+              }
+              private val dynamicReceiver = object : BroadcastReceiver() {
+                  override fun onReceive(context: Context, intent: Intent?) {
+                      when (intent?.action) {
+                          Intent.ACTION_SCREEN_OFF -> AppRepo.clearAllUnlockedSessionsOnScreenOff()
+                          Intent.ACTION_PACKAGE_ADDED -> {
+                              if (!intent.getBooleanExtra(Intent.EXTRA_REPLACING, false)) {
+                                  val pkg = intent.data?.schemeSpecificPart ?: return
+                                  NewAppNotificationHelper.showLockPromptNotification(context, pkg)
+                              }
+                          }
+                      }
+                  }
+              }
+              override fun onServiceConnected() {
+                  super.onServiceConnected()
+                  AppRepo.init(this)
+                  runCatching {
+                      registerReceiver(dynamicReceiver, IntentFilter(Intent.ACTION_SCREEN_OFF))
+                      val pkgFilter = IntentFilter(Intent.ACTION_PACKAGE_ADDED).apply { addDataScheme("package") }
+                      registerReceiver(dynamicReceiver, pkgFilter)
+                  }
+                  isPolling = true
+                  mainHandler.post(pollRunnable)
+                  NowLockMonitorService.startServiceSafely(this)
               }
               override fun onAccessibilityEvent(event: AccessibilityEvent?) {
                   if (event == null) return
                   AppRepo.init(this)
-                  val pkg = event.packageName?.toString() ?: ""
+                  val eventPkg = event.packageName?.toString() ?: ""
                   val cls = event.className?.toString() ?: ""
-                  if (pkg == packageName && cls.contains("LockScreenActivity")) {
-                      hideRecentsPrivacyShield()
+                  if (eventPkg == packageName && cls.contains("LockScreenActivity")) return
+                  if (eventPkg.isNotEmpty() && AppRepo.evaluateForegroundPackage(eventPkg, packageName)) {
+                      AppRepo.launchLockScreenIfNeeded(this, eventPkg)
                       return
                   }
-                  val isRecentsScreen = cls.contains("Recents", ignoreCase = true) ||
-                      cls.contains("Overview", ignoreCase = true) ||
-                      cls.contains("Quickstep", ignoreCase = true)
-                  if (isRecentsScreen && AppRepo.isRecentsPrivacyEnabled() && AppRepo.getLockedPackages().isNotEmpty()) {
-                      showRecentsPrivacyShield()
-                      return
-                  } else if (pkg.isNotEmpty() && !pkg.contains("systemui") && !isRecentsScreen) {
-                      hideRecentsPrivacyShield()
-                  }
-                  if (pkg.isNotEmpty() && AppRepo.evaluateForegroundPackage(pkg, packageName)) {
-                      AppRepo.launchLockScreenIfNeeded(this, pkg)
+                  val rootPkg = runCatching { rootInActiveWindow?.packageName?.toString() ?: "" }.getOrDefault("")
+                  if (rootPkg.isNotEmpty() && rootPkg != eventPkg && AppRepo.evaluateForegroundPackage(rootPkg, packageName)) {
+                      AppRepo.launchLockScreenIfNeeded(this, rootPkg)
                       return
                   }
                   if (event.eventType == AccessibilityEvent.TYPE_WINDOWS_CHANGED) {
@@ -1356,59 +2148,138 @@ jobs:
                       }
                   }
               }
-              private fun showRecentsPrivacyShield() {
-                  if (!Settings.canDrawOverlays(this) || isRecentsCoverAttached) return
-                  val windowManager = wm ?: return
-                  val isDark = AppRepo.isDarkEffective(this)
-                  val bgColor = if (isDark) android.graphics.Color.parseColor("#181856") else android.graphics.Color.parseColor("#F5F6FA")
-                  val iconPx = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 86f, resources.displayMetrics).toInt()
-                  val container = FrameLayout(this).apply {
-                      setBackgroundColor(bgColor)
-                      val img = ImageView(this@NowLockAccessibilityService).apply {
-                          setImageResource(R.drawable.ic_nowlock_logo)
-                      }
-                      val lpImg = FrameLayout.LayoutParams(iconPx, iconPx).apply {
-                          gravity = Gravity.CENTER
-                      }
-                      addView(img, lpImg)
-                      setOnClickListener {
-                          hideRecentsPrivacyShield()
-                      }
-                  }
-                  val lp = WindowManager.LayoutParams(
-                      WindowManager.LayoutParams.MATCH_PARENT,
-                      WindowManager.LayoutParams.MATCH_PARENT,
-                      WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-                      WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                          WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
-                      PixelFormat.OPAQUE
-                  )
-                  runCatching {
-                      windowManager.addView(container, lp)
-                      recentsCoverView = container
-                      isRecentsCoverAttached = true
-                      mainHandler.postDelayed({ hideRecentsPrivacyShield() }, 2200L)
-                  }
+              override fun onInterrupt() {}
+              override fun onDestroy() {
+                  isPolling = false
+                  mainHandler.removeCallbacks(pollRunnable)
+                  runCatching { unregisterReceiver(dynamicReceiver) }
+                  super.onDestroy()
               }
-              private fun hideRecentsPrivacyShield() {
-                  val view = recentsCoverView ?: return
-                  if (isRecentsCoverAttached) {
+          }
+          // Engine 2: Standalone UsageStats Foreground Service (Ensures locking works on reboot & even if Accessibility is off!)
+          class NowLockMonitorService : Service() {
+              private val handler = Handler(Looper.getMainLooper())
+              private var isRunning = false
+              private val pollRunnable = object : Runnable {
+                  override fun run() {
+                      if (!isRunning) return
                       runCatching {
-                          wm?.removeViewImmediate(view)
+                          val (latestPkg, latestCls) = pollTopPackageViaUsageStats(this@NowLockMonitorService)
+                          if (latestPkg.isNotEmpty() && !(latestPkg == packageName && latestCls.contains("LockScreenActivity"))) {
+                              if (AppRepo.evaluateForegroundPackage(latestPkg, packageName)) {
+                                  AppRepo.launchLockScreenIfNeeded(this@NowLockMonitorService, latestPkg)
+                              }
+                          }
+                      }
+                      handler.postDelayed(this, 200L)
+                  }
+              }
+              private val dynamicReceiver = object : BroadcastReceiver() {
+                  override fun onReceive(context: Context, intent: Intent?) {
+                      when (intent?.action) {
+                          Intent.ACTION_SCREEN_OFF -> AppRepo.clearAllUnlockedSessionsOnScreenOff()
+                          Intent.ACTION_PACKAGE_ADDED -> {
+                              if (!intent.getBooleanExtra(Intent.EXTRA_REPLACING, false)) {
+                                  val pkg = intent.data?.schemeSpecificPart ?: return
+                                  NewAppNotificationHelper.showLockPromptNotification(context, pkg)
+                              }
+                          }
                       }
                   }
-                  isRecentsCoverAttached = false
-                  recentsCoverView = null
               }
-              override fun onInterrupt() {
-                  hideRecentsPrivacyShield()
+              override fun onCreate() {
+                  super.onCreate()
+                  AppRepo.init(this)
+                  promoteToForeground()
+                  runCatching {
+                      registerReceiver(dynamicReceiver, IntentFilter(Intent.ACTION_SCREEN_OFF))
+                      val pkgFilter = IntentFilter(Intent.ACTION_PACKAGE_ADDED).apply { addDataScheme("package") }
+                      registerReceiver(dynamicReceiver, pkgFilter)
+                  }
+                  isRunning = true
+                  handler.post(pollRunnable)
+              }
+              override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+                  AppRepo.init(this)
+                  promoteToForeground()
+                  if (!isRunning) {
+                      isRunning = true
+                      handler.post(pollRunnable)
+                  }
+                  return START_STICKY
+              }
+              private fun promoteToForeground() {
+                  try {
+                      val channelId = "nowlock_guard_channel"
+                      val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                          val channel = NotificationChannel(
+                              channelId,
+                              "NowLock Guard",
+                              NotificationManager.IMPORTANCE_LOW
+                          ).apply {
+                              setShowBadge(false)
+                          }
+                          nm.createNotificationChannel(channel)
+                      }
+                      val s = getStrings(AppRepo.getAppLang())
+                      val pendingIntent = PendingIntent.getActivity(
+                          this,
+                          0,
+                          Intent(this, MainActivity::class.java),
+                          PendingIntent.FLAG_IMMUTABLE
+                      )
+                      val notification = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                          Notification.Builder(this, channelId)
+                              .setContentTitle("NowLock")
+                              .setContentText(s.statusActive)
+                              .setSmallIcon(R.drawable.ic_nowlock_logo)
+                              .setContentIntent(pendingIntent)
+                              .setOngoing(true)
+                              .build()
+                      } else {
+                          @Suppress("DEPRECATION")
+                          Notification.Builder(this)
+                              .setContentTitle("NowLock")
+                              .setContentText(s.statusActive)
+                              .setSmallIcon(R.drawable.ic_nowlock_logo)
+                              .setContentIntent(pendingIntent)
+                              .setOngoing(true)
+                              .build()
+                      }
+                      if (Build.VERSION.SDK_INT >= 34) {
+                          startForeground(1001, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+                      } else {
+                          startForeground(1001, notification)
+                      }
+                  } catch (t: Throwable) {
+                      runCatching { stopSelf() }
+                  }
               }
               override fun onDestroy() {
-                  isPollingUsageStats = false
-                  mainHandler.removeCallbacks(usageStatsPollRunnable)
-                  hideRecentsPrivacyShield()
-                  runCatching { unregisterReceiver(screenOffReceiver) }
+                  isRunning = false
+                  handler.removeCallbacks(pollRunnable)
+                  runCatching { unregisterReceiver(dynamicReceiver) }
                   super.onDestroy()
+              }
+              override fun onBind(intent: Intent?): IBinder? = null
+              companion object {
+                  fun startServiceSafely(ctx: Context) {
+                      runCatching {
+                          val intent = Intent(ctx, NowLockMonitorService::class.java)
+                          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                              ctx.startForegroundService(intent)
+                          } else {
+                              ctx.startService(intent)
+                          }
+                      }
+                  }
+              }
+          }
+          class BootStartupReceiver : BroadcastReceiver() {
+              override fun onReceive(context: Context, intent: Intent?) {
+                  AppRepo.init(context)
+                  NowLockMonitorService.startServiceSafely(context)
               }
           }
           class UninstallProtectionReceiver : DeviceAdminReceiver() {
@@ -1416,11 +2287,16 @@ jobs:
                   return "NowLock: غیرفعال کردن این گزینه باعث حذف محافظ برنامه می‌شود."
               }
           }
-          // Full-Screen Notch-Aware Lock Activity
+          // Full-Screen Lock Activity (Clean Top Header: ONLY Small Padlock + RGB "NowLock", Intruder Selfie on Failed Fingerprint Too)
           class LockScreenActivity : FragmentActivity() {
               companion object {
                   @Volatile var isShowing = false
                   @Volatile var activeTargetPkg = ""
+              }
+              override fun onResume() {
+                  super.onResume()
+                  isShowing = true
+                  OverlayLockBridge.dismissShield(this)
               }
               override fun onCreate(savedInstanceState: Bundle?) {
                   super.onCreate(savedInstanceState)
@@ -1433,6 +2309,7 @@ jobs:
                   val targetPkg = intent.getStringExtra("target_pkg") ?: ""
                   activeTargetPkg = targetPkg
                   isShowing = true
+                  OverlayLockBridge.dismissShield(this)
                   onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
                       override fun handleOnBackPressed() {
                           navigateHomeAndClose()
@@ -1440,7 +2317,7 @@ jobs:
                   })
                   setContent {
                       val lang = AppRepo.getAppLang()
-                      val isFa = lang != AppLang.EN
+                      val s = getStrings(lang)
                       val themeMode = AppRepo.getThemeMode()
                       val sysDark = isSystemInDarkTheme()
                       val isDark = when (themeMode) {
@@ -1462,26 +2339,8 @@ jobs:
                       val fpEnabled = AppRepo.isFingerprintEnabled() && canUseFingerprint(this)
                       var enteredPin by remember { mutableStateOf("") }
                       var failedAttempts by remember { mutableStateOf(0) }
-                      val defaultPrompt = remember(lang, usePattern) {
-                          if (usePattern) {
-                              when (lang) {
-                                  AppLang.FA -> "الگوی قفل را رسم کنید"
-                                  AppLang.EN -> "Draw Unlock Pattern"
-                                  AppLang.AZ -> "قفل اولگوسونو چکین"
-                                  AppLang.LOR -> "الگوی قفلنه بکشیت"
-                                  AppLang.MAZ -> "قفلِ الگو ره بکشین"
-                              }
-                          } else {
-                              when (lang) {
-                                  AppLang.FA -> "پین‌کد را وارد کنید"
-                                  AppLang.EN -> "Enter PIN Code"
-                                  AppLang.AZ -> "پین‌کودو داخیل ائدین"
-                                  AppLang.LOR -> "پین‌کدنه بزنیت"
-                                  AppLang.MAZ -> "پین‌کد ره بزنین"
-                              }
-                          }
-                      }
-                      var statusMessage by remember { mutableStateOf(defaultPrompt) }
+                      val defaultPrompt = if (usePattern) s.lockPromptPattern else s.lockPromptPin
+                      var statusMessage by remember(lang, usePattern) { mutableStateOf(defaultPrompt) }
                       var isErrorState by remember { mutableStateOf(false) }
                       var isUnlockingFade by remember { mutableStateOf(false) }
                       var telegramBiometricPulse by remember { mutableStateOf(false) }
@@ -1491,6 +2350,7 @@ jobs:
                           finishedListener = {
                               if (isUnlockingFade) {
                                   isShowing = false
+                                  OverlayLockBridge.dismissShield(this@LockScreenActivity)
                                   finish()
                                   overridePendingTransition(0, android.R.anim.fade_out)
                               }
@@ -1498,41 +2358,30 @@ jobs:
                           label = "unlockFade"
                       )
                       val scope = rememberCoroutineScope()
-                      val targetAppInfo = remember(targetPkg) {
-                          runCatching {
-                              val ai = packageManager.getApplicationInfo(targetPkg, 0)
-                              val label = packageManager.getApplicationLabel(ai).toString()
-                              val bmp = drawableToBitmap(packageManager.getApplicationIcon(ai))
-                              Pair(label, bmp)
-                          }.getOrNull()
-                      }
                       fun onSuccessfulUnlock() {
                           AppRepo.markUnlocked(targetPkg)
+                          OverlayLockBridge.dismissShield(this@LockScreenActivity)
                           isUnlockingFade = true
                       }
                       fun onWrongAttempt() {
                           failedAttempts++
                           isErrorState = true
                           AppRepo.triggerShortVibration(this@LockScreenActivity, 65L)
+                          // Captures silent intruder selfie after 3 failed attempts (PIN, Pattern, OR Fingerprint!)
                           if (failedAttempts >= 3 && AppRepo.isIntruderSelfieEnabled()) {
                               AppRepo.recordIntruderAttempt(this@LockScreenActivity, targetPkg)
                           }
-                          statusMessage = when (lang) {
-                              AppLang.FA -> "رمز اشتباه است، دوباره تلاش کنید"
-                              AppLang.EN -> "Incorrect password, try again"
-                              AppLang.AZ -> "رمز یانلیشدیر، یئنیدن جهد ائدین"
-                              AppLang.LOR -> "رمز اشتواس، هنی تلاش بکید"
-                              AppLang.MAZ -> "رمز اشتباه هسه، اَی تلاش هاکنین"
-                          }
+                          statusMessage = s.lockWrongAttempt
                       }
                       LaunchedEffect(Unit) {
                           if (fpEnabled) {
                               delay(180)
                               telegramBiometricPulse = true
                               triggerFingerprintPrompt(
-                                  isFa = isFa,
+                                  s = s,
                                   onSuccess = { onSuccessfulUnlock() },
-                                  onCancelOrFail = { telegramBiometricPulse = false }
+                                  onFailedAttempt = { onWrongAttempt() },
+                                  onCancelOrError = { telegramBiometricPulse = false }
                               )
                           }
                       }
@@ -1546,56 +2395,40 @@ jobs:
                               modifier = Modifier
                                   .fillMaxSize()
                                   .windowInsetsPadding(WindowInsets.systemBars.union(WindowInsets.displayCutout))
-                                  .padding(horizontal = 24.dp, vertical = if (isCompactScreen) 10.dp else 18.dp),
+                                  .padding(horizontal = 24.dp, vertical = if (isCompactScreen) 12.dp else 22.dp),
                               horizontalAlignment = Alignment.CenterHorizontally,
                               verticalArrangement = Arrangement.SpaceBetween
                           ) {
+                              // Clean Header: ONLY Small Padlock + Animated RGB "NowLock" (Removed big duplicate padlock and white NowLock below it!)
                               Column(
                                   horizontalAlignment = Alignment.CenterHorizontally,
-                                  modifier = Modifier.padding(top = if (isCompactScreen) 8.dp else 16.dp)
+                                  modifier = Modifier.padding(top = if (isCompactScreen) 18.dp else 32.dp)
                               ) {
                                   Row(
                                       verticalAlignment = Alignment.CenterVertically,
-                                      horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                      horizontalArrangement = Arrangement.spacedBy(10.dp)
                                   ) {
                                       Image(
                                           painter = painterResource(id = R.drawable.ic_nowlock_logo),
                                           contentDescription = "NowLock",
                                           modifier = Modifier
-                                              .size(26.dp)
-                                              .clip(RoundedCornerShape(7.dp))
+                                              .size(32.dp)
+                                              .clip(RoundedCornerShape(9.dp))
                                       )
                                       AnimatedRgbBrandText(
                                           text = "NowLock",
-                                          fontSize = 16.sp
+                                          fontSize = 24.sp
                                       )
                                   }
-                                  Spacer(Modifier.height(if (isCompactScreen) 10.dp else 14.dp))
-                                  if (targetAppInfo != null) {
-                                      Image(
-                                          bitmap = targetAppInfo.second.asImageBitmap(),
-                                          contentDescription = targetAppInfo.first,
-                                          modifier = Modifier
-                                              .size(if (isCompactScreen) 48.dp else 56.dp)
-                                              .clip(RoundedCornerShape(15.dp))
-                                      )
-                                      Spacer(Modifier.height(8.dp))
-                                      Text(
-                                          text = targetAppInfo.first,
-                                          color = primaryTextColor,
-                                          fontSize = if (isCompactScreen) 18.sp else 20.sp,
-                                          fontWeight = FontWeight.Bold
-                                      )
-                                  }
-                                  Spacer(Modifier.height(8.dp))
+                                  Spacer(Modifier.height(16.dp))
                                   Text(
                                       text = statusMessage,
                                       color = if (isErrorState) Color(0xFFEF4444) else secondaryTextColor,
-                                      fontSize = 13.sp,
+                                      fontSize = 13.5.sp,
                                       textAlign = TextAlign.Center
                                   )
                                   if (!usePattern) {
-                                      Spacer(Modifier.height(if (isCompactScreen) 14.dp else 20.dp))
+                                      Spacer(Modifier.height(24.dp))
                                       Row(
                                           horizontalArrangement = Arrangement.spacedBy(18.dp),
                                           verticalAlignment = Alignment.CenterVertically
@@ -1664,7 +2497,7 @@ jobs:
                                           ) {
                                               TextButton(onClick = { navigateHomeAndClose() }) {
                                                   Text(
-                                                      text = if (isFa) "خروج" else "Exit",
+                                                      text = s.lockExitBtn,
                                                       color = secondaryTextColor,
                                                       fontSize = 15.sp
                                                   )
@@ -1677,9 +2510,10 @@ jobs:
                                                       onClick = {
                                                           telegramBiometricPulse = true
                                                           triggerFingerprintPrompt(
-                                                              isFa = isFa,
+                                                              s = s,
                                                               onSuccess = { onSuccessfulUnlock() },
-                                                              onCancelOrFail = { telegramBiometricPulse = false }
+                                                              onFailedAttempt = { onWrongAttempt() },
+                                                              onCancelOrError = { telegramBiometricPulse = false }
                                                           )
                                                       }
                                                   )
@@ -1720,9 +2554,10 @@ jobs:
                                           onFingerprintClick = {
                                               telegramBiometricPulse = true
                                               triggerFingerprintPrompt(
-                                                  isFa = isFa,
+                                                  s = s,
                                                   onSuccess = { onSuccessfulUnlock() },
-                                                  onCancelOrFail = { telegramBiometricPulse = false }
+                                                  onFailedAttempt = { onWrongAttempt() },
+                                                  onCancelOrError = { telegramBiometricPulse = false }
                                               )
                                           }
                                       )
@@ -1738,12 +2573,15 @@ jobs:
                   super.onNewIntent(intent)
                   val pkg = intent.getStringExtra("target_pkg") ?: ""
                   if (pkg.isNotEmpty()) activeTargetPkg = pkg
+                  OverlayLockBridge.dismissShield(this)
               }
               override fun onDestroy() {
                   isShowing = false
+                  OverlayLockBridge.dismissShield(this)
                   super.onDestroy()
               }
               private fun navigateHomeAndClose() {
+                  OverlayLockBridge.dismissShield(this)
                   val home = Intent(Intent.ACTION_MAIN).apply {
                       addCategory(Intent.CATEGORY_HOME)
                       flags = Intent.FLAG_ACTIVITY_NEW_TASK
@@ -1753,9 +2591,10 @@ jobs:
                   finish()
               }
               private fun triggerFingerprintPrompt(
-                  isFa: Boolean,
+                  s: UiStrings,
                   onSuccess: () -> Unit,
-                  onCancelOrFail: () -> Unit
+                  onFailedAttempt: () -> Unit,
+                  onCancelOrError: () -> Unit
               ) {
                   val executor = ContextCompat.getMainExecutor(this)
                   val prompt = BiometricPrompt(this, executor, object : BiometricPrompt.AuthenticationCallback() {
@@ -1765,26 +2604,26 @@ jobs:
                       }
                       override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
                           super.onAuthenticationError(errorCode, errString)
-                          onCancelOrFail()
+                          if (errorCode == BiometricPrompt.ERROR_LOCKOUT || errorCode == BiometricPrompt.ERROR_LOCKOUT_PERMANENT) {
+                              onFailedAttempt()
+                          }
+                          onCancelOrError()
                       }
                       override fun onAuthenticationFailed() {
                           super.onAuthenticationFailed()
-                          AppRepo.triggerShortVibration(this@LockScreenActivity, 55L)
+                          // Every wrong fingerprint attempt triggers vibration and counts toward Intruder Selfie!
+                          onFailedAttempt()
                       }
                   })
                   val promptInfo = BiometricPrompt.PromptInfo.Builder()
                       .setTitle("NowLock")
-                      .setSubtitle(if (isFa) "حسگر اثر انگشت را لمس کنید" else "Touch the fingerprint sensor")
+                      .setSubtitle(s.biometricSubtitle)
                       .setNegativeButtonText(
-                          if (AppRepo.getComboMode() == LockComboMode.PATTERN_FINGERPRINT) {
-                              if (isFa) "استفاده از الگو" else "Use Pattern"
-                          } else {
-                              if (isFa) "استفاده از پین‌کد" else "Use PIN"
-                          }
+                          if (AppRepo.getComboMode() == LockComboMode.PATTERN_FINGERPRINT) s.biometricUsePattern else s.biometricUsePin
                       )
                       .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.BIOMETRIC_WEAK)
                       .build()
-                  runCatching { prompt.authenticate(promptInfo) }.onFailure { onCancelOrFail() }
+                  runCatching { prompt.authenticate(promptInfo) }.onFailure { onCancelOrError() }
               }
           }
           fun canUseFingerprint(context: Context): Boolean {
@@ -2204,19 +3043,45 @@ jobs:
               private var hasAccState = mutableStateOf(false)
               private var hasUsageState = mutableStateOf(false)
               private var hasCameraState = mutableStateOf(false)
+              private var isPausedInRecentsState = mutableStateOf(false)
+              override fun onPause() {
+                  super.onPause()
+                  isPausedInRecentsState.value = true
+              }
               override fun onResume() {
                   super.onResume()
+                  isPausedInRecentsState.value = false
                   hasOverlayState.value = Settings.canDrawOverlays(this)
                   hasAccState.value = isAccessibilityServiceEnabled(this)
                   hasUsageState.value = isUsageStatsPermissionGranted(this)
                   hasCameraState.value = ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
                   applyRecentsSecureFlag(AppRepo.isRecentsPrivacyEnabled())
+                  NowLockMonitorService.startServiceSafely(this)
                   if (AppRepo.isAnyPasswordSet() &&
                       AppRepo.getLockedPackages().contains(packageName) &&
                       !AppRepo.isWithinGracePeriod(packageName) &&
                       !LockScreenActivity.isShowing
                   ) {
                       AppRepo.launchLockScreenIfNeeded(this, packageName)
+                  }
+              }
+              override fun onRequestPermissionsResult(
+                  requestCode: Int,
+                  permissions: Array<out String>,
+                  grantResults: IntArray
+              ) {
+                  super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+                  hasCameraState.value = ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+              }
+              private fun requestCameraPermissionSafely() {
+                  runCatching {
+                      val perms = mutableListOf(Manifest.permission.CAMERA)
+                      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                          perms.add(Manifest.permission.POST_NOTIFICATIONS)
+                      }
+                      ActivityCompat.requestPermissions(this, perms.toTypedArray(), 1001)
+                  }.onFailure {
+                      openDirectAppDetailsSettings(this)
                   }
               }
               private fun applyRecentsSecureFlag(enabled: Boolean) {
@@ -2237,9 +3102,11 @@ jobs:
                   hasAccState.value = isAccessibilityServiceEnabled(this)
                   hasUsageState.value = isUsageStatsPermissionGranted(this)
                   hasCameraState.value = ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+                  NowLockMonitorService.startServiceSafely(this)
                   setContent {
                       var themeMode by remember { mutableStateOf(AppRepo.getThemeMode()) }
                       var appLang by remember { mutableStateOf(AppRepo.getAppLang()) }
+                      val s = getStrings(appLang)
                       val isFa = appLang.isRtl
                       var selectedTab by remember { mutableStateOf(NowLockNavTab.APPS) }
                       var comboMode by remember { mutableStateOf(AppRepo.getComboMode()) }
@@ -2256,26 +3123,12 @@ jobs:
                       SideEffect {
                           configureNotchAndGlassBars(this@MainActivity, isDark)
                       }
-                      val permissionLauncher = rememberLauncherForActivityResult(
-                          contract = ActivityResultContracts.RequestMultiplePermissions()
-                      ) { result ->
-                          hasCameraState.value = result[Manifest.permission.CAMERA] == true
-                      }
                       val hasOverlayPerm by hasOverlayState
                       val hasAccPerm by hasAccState
                       val hasUsagePerm by hasUsageState
                       val hasCamPerm by hasCameraState
+                      val isPausedInRecents by isPausedInRecentsState
                       val isEngineReady = hasAccPerm && hasUsagePerm && hasOverlayPerm && hasCamPerm
-                      var showCameraPushDialog by remember { mutableStateOf(false) }
-                      // Wait 450ms for activity window to settle before showing Push Camera Dialog
-                      LaunchedEffect(hasCamPerm) {
-                          if (!hasCamPerm) {
-                              delay(450)
-                              showCameraPushDialog = true
-                          } else {
-                              showCameraPushDialog = false
-                          }
-                      }
                       val topHeaderBg = if (isDark) Color(0xCC1C1B5A) else Color(0xE6F0F2FA)
                       val card = if (isDark) Color(0xCC282664) else Color(0xF0FFFFFF)
                       val border = if (isDark) Color(0x18FFFFFF) else Color(0x125D56F5)
@@ -2336,9 +3189,9 @@ jobs:
                                                       color = if (passwordSetState && isEngineReady) Color(0x2210B981) else Color(0x22F43F5E)
                                                   ) {
                                                       Text(
-                                                          text = if (!passwordSetState) (if (isFa) "⚠ بدون رمز" else "⚠ No Password")
-                                                          else if (!isEngineReady) (if (isFa) "⚠ نیاز به مجوز" else "⚠ Needs Permission")
-                                                          else (if (isFa) "✓ محافظ فعال" else "✓ Guard Active"),
+                                                          text = if (!passwordSetState) s.statusNoPassword
+                                                          else if (!isEngineReady) s.statusNeedsPerm
+                                                          else s.statusActive,
                                                           color = if (passwordSetState && isEngineReady) Color(0xFF10B981) else Color(0xFFF43F5E),
                                                           fontSize = 11.sp,
                                                           fontWeight = FontWeight.SemiBold,
@@ -2359,7 +3212,7 @@ jobs:
                                                           onClick = { selectedTab = tab },
                                                           text = {
                                                               Text(
-                                                                  tab.getTitle(appLang),
+                                                                  tab.getTitle(s),
                                                                   fontSize = 13.sp,
                                                                   fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
                                                                   color = if (isSelected) blue else sub
@@ -2383,15 +3236,13 @@ jobs:
                                                           dragAccum += dragAmount
                                                       },
                                                       onDragEnd = {
-                                                          val threshold = 90f
+                                                          val threshold = 85f
                                                           val tabs = NowLockNavTab.entries
                                                           val cur = selectedTab.ordinal
                                                           if (dragAccum > threshold) {
-                                                              // Swipe Right
                                                               val nextIdx = if (isFa) (cur + 1).coerceAtMost(tabs.lastIndex) else (cur - 1).coerceAtLeast(0)
                                                               selectedTab = tabs[nextIdx]
                                                           } else if (dragAccum < -threshold) {
-                                                              // Swipe Left
                                                               val nextIdx = if (isFa) (cur - 1).coerceAtLeast(0) else (cur + 1).coerceAtMost(tabs.lastIndex)
                                                               selectedTab = tabs[nextIdx]
                                                           }
@@ -2403,6 +3254,7 @@ jobs:
                                           when (selectedTab) {
                                               NowLockNavTab.APPS -> {
                                                   Column(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
+                                                      // Top 4-Button Permission Banner (NO Push Dialog on Main Screen; Each Button Deep-Links Directly!)
                                                       if (!isEngineReady) {
                                                           Surface(
                                                               shape = RoundedCornerShape(16.dp),
@@ -2415,51 +3267,49 @@ jobs:
                                                                   verticalArrangement = Arrangement.spacedBy(8.dp)
                                                               ) {
                                                                   Text(
-                                                                      if (isFa) "برای عملکرد تضمینی قفل برنامه‌ها، هر ۴ مجوز زیر را فعال کنید:" else "Enable all 4 permissions below:",
+                                                                      s.permBannerTitle,
                                                                       color = Color(0xFFD97706),
                                                                       fontWeight = FontWeight.Bold,
-                                                                      fontSize = 12.sp
+                                                                      fontSize = 11.5.sp
                                                                   )
                                                                   Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                                                       Button(
-                                                                          onClick = { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) },
+                                                                          onClick = { openDirectAccessibilitySettings(this@MainActivity) },
                                                                           modifier = Modifier.weight(1f),
                                                                           contentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp),
                                                                           colors = ButtonDefaults.buttonColors(containerColor = if (hasAccPerm) Color(0xFF10B981) else blue),
                                                                           shape = RoundedCornerShape(10.dp)
                                                                       ) {
-                                                                          Text(if (isFa) (if (hasAccPerm) "✓ ۱. سرویس آنی" else "۱. سرویس آنی") else "1. Accessibility", fontSize = 10.sp, color = Color.White)
+                                                                          Text(if (hasAccPerm) "✓ ${s.perm1Acc}" else s.perm1Acc, fontSize = 10.sp, color = Color.White)
                                                                       }
                                                                       Button(
-                                                                          onClick = { startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)) },
+                                                                          onClick = { openDirectUsageAccessSettings(this@MainActivity) },
                                                                           modifier = Modifier.weight(1f),
                                                                           contentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp),
                                                                           colors = ButtonDefaults.buttonColors(containerColor = if (hasUsagePerm) Color(0xFF10B981) else blue),
                                                                           shape = RoundedCornerShape(10.dp)
                                                                       ) {
-                                                                          Text(if (isFa) (if (hasUsagePerm) "✓ ۲. آمار مصرف" else "۲. آمار مصرف") else "2. Usage Access", fontSize = 10.sp, color = Color.White)
+                                                                          Text(if (hasUsagePerm) "✓ ${s.perm2Usage}" else s.perm2Usage, fontSize = 10.sp, color = Color.White)
                                                                       }
                                                                   }
                                                                   Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                                                       Button(
-                                                                          onClick = { startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))) },
+                                                                          onClick = { openDirectOverlaySettings(this@MainActivity) },
                                                                           modifier = Modifier.weight(1f),
                                                                           contentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp),
                                                                           colors = ButtonDefaults.buttonColors(containerColor = if (hasOverlayPerm) Color(0xFF10B981) else Color(0xFFF59E0B)),
                                                                           shape = RoundedCornerShape(10.dp)
                                                                       ) {
-                                                                          Text(if (isFa) (if (hasOverlayPerm) "✓ ۳. نمایش شناور" else "۳. نمایش شناور") else "3. Overlay", fontSize = 10.sp, color = Color.White)
+                                                                          Text(if (hasOverlayPerm) "✓ ${s.perm3Overlay}" else s.perm3Overlay, fontSize = 10.sp, color = Color.White)
                                                                       }
                                                                       Button(
-                                                                          onClick = {
-                                                                              permissionLauncher.launch(arrayOf(Manifest.permission.CAMERA))
-                                                                          },
+                                                                          onClick = { requestCameraPermissionSafely() },
                                                                           modifier = Modifier.weight(1f),
                                                                           contentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp),
                                                                           colors = ButtonDefaults.buttonColors(containerColor = if (hasCamPerm) Color(0xFF10B981) else Color(0xFFEC4899)),
                                                                           shape = RoundedCornerShape(10.dp)
                                                                       ) {
-                                                                          Text(if (isFa) (if (hasCamPerm) "✓ ۴. دوربین سلفی" else "۴. دوربین سلفی") else "4. Selfie Camera", fontSize = 10.sp, color = Color.White)
+                                                                          Text(if (hasCamPerm) "✓ ${s.perm4Camera}" else s.perm4Camera, fontSize = 10.sp, color = Color.White)
                                                                       }
                                                                   }
                                                               }
@@ -2469,15 +3319,7 @@ jobs:
                                                           value = searchQuery,
                                                           onValueChange = { searchQuery = it },
                                                           placeholder = {
-                                                              Text(
-                                                                  when (appLang) {
-                                                                      AppLang.EN -> "Search apps..."
-                                                                      AppLang.AZ -> "برنامه آختار..."
-                                                                      else -> "جستجوی برنامه..."
-                                                                  },
-                                                                  fontSize = 13.sp,
-                                                                  color = sub
-                                                              )
+                                                              Text(s.searchPlaceholder, fontSize = 13.sp, color = sub)
                                                           },
                                                           singleLine = true,
                                                           shape = RoundedCornerShape(14.dp),
@@ -2498,7 +3340,7 @@ jobs:
                                                                           AppFilterMode.LOCKED -> appList.count { it.isLocked }
                                                                           AppFilterMode.UNLOCKED -> appList.count { !it.isLocked }
                                                                       }
-                                                                      Text("${filter.getTitle(appLang)} ($count)", fontSize = 12.sp)
+                                                                      Text("${filter.getTitle(s)} ($count)", fontSize = 12.sp)
                                                                   },
                                                                   colors = FilterChipDefaults.filterChipColors(
                                                                       selectedContainerColor = blue,
@@ -2560,7 +3402,7 @@ jobs:
                                                                                           color = blue.copy(alpha = 0.15f)
                                                                                       ) {
                                                                                           Text(
-                                                                                              if (isFa) "خود برنامه" else "This App",
+                                                                                              s.selfAppBadge,
                                                                                               color = blue,
                                                                                               fontSize = 10.sp,
                                                                                               fontWeight = FontWeight.Bold,
@@ -2590,6 +3432,7 @@ jobs:
                                                                                   appList = appList.map {
                                                                                       if (it.packageName == app.packageName) it.copy(isLocked = lock) else it
                                                                                   }
+                                                                                  NowLockMonitorService.startServiceSafely(this@MainActivity)
                                                                               }
                                                                           }
                                                                       )
@@ -2607,7 +3450,7 @@ jobs:
                                                   ) {
                                                       item {
                                                           MinimalSectionCard(
-                                                              title = if (isFa) "روش قفل و مدیریت رمز" else "Authentication & Password",
+                                                              title = s.secAuthTitle,
                                                               cardColor = card,
                                                               borderColor = border,
                                                               txtColor = txt
@@ -2615,6 +3458,7 @@ jobs:
                                                               Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                                                                   LockComboMode.entries.forEach { itemMode ->
                                                                       val sel = comboMode == itemMode
+                                                                      val modeLabel = if (itemMode == LockComboMode.PIN_FINGERPRINT) s.modePin else s.modePattern
                                                                       Surface(
                                                                           shape = RoundedCornerShape(12.dp),
                                                                           color = if (sel) blue else blue.copy(alpha = 0.08f),
@@ -2633,7 +3477,7 @@ jobs:
                                                                       ) {
                                                                           Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 6.dp)) {
                                                                               Text(
-                                                                                  itemMode.getTitle(appLang),
+                                                                                  modeLabel,
                                                                                   color = if (sel) Color.White else txt,
                                                                                   fontSize = 12.sp,
                                                                                   fontWeight = FontWeight.SemiBold,
@@ -2652,8 +3496,7 @@ jobs:
                                                                       colors = ButtonDefaults.buttonColors(containerColor = blue)
                                                                   ) {
                                                                       Text(
-                                                                          if (AppRepo.isPinSet()) (if (isFa) "تغییر پین‌کد" else "Change PIN")
-                                                                          else (if (isFa) "تعیین پین‌کد" else "Set PIN"),
+                                                                          if (AppRepo.isPinSet()) s.btnChangePin else s.btnSetPin,
                                                                           color = Color.White,
                                                                           fontSize = 12.sp
                                                                       )
@@ -2664,8 +3507,7 @@ jobs:
                                                                       shape = RoundedCornerShape(12.dp)
                                                                   ) {
                                                                       Text(
-                                                                          if (AppRepo.isPatternSet()) (if (isFa) "تغییر الگو" else "Change Pattern")
-                                                                          else (if (isFa) "تعیین الگو" else "Set Pattern"),
+                                                                          if (AppRepo.isPatternSet()) s.btnChangePattern else s.btnSetPattern,
                                                                           color = txt,
                                                                           fontSize = 12.sp
                                                                       )
@@ -2673,18 +3515,14 @@ jobs:
                                                               }
                                                               HorizontalDivider(color = border, modifier = Modifier.padding(vertical = 8.dp))
                                                               SettingsToggleRow(
-                                                                  title = if (isFa) "فعالسازی هم‌زمان اثر انگشت" else "Enable Fingerprint Unlock",
-                                                                  subtitle = if (isFa) "بازگشایی سریع در کنار پین‌کد یا الگوی انتخابی" else "Use fingerprint alongside PIN or Pattern",
+                                                                  title = s.fpTitle,
+                                                                  subtitle = s.fpSub,
                                                                   checked = fpEnabled,
                                                                   txtColor = txt,
                                                                   subColor = sub,
                                                                   onCheckedChange = { enabled ->
                                                                       if (enabled && !canUseFingerprint(this@MainActivity)) {
-                                                                          Toast.makeText(
-                                                                              this@MainActivity,
-                                                                              if (isFa) "ابتدا اثر انگشت را در تنظیمات گوشی ثبت کنید" else "Enroll fingerprint in Settings first",
-                                                                              Toast.LENGTH_LONG
-                                                                          ).show()
+                                                                          Toast.makeText(this@MainActivity, s.fpEnrollToast, Toast.LENGTH_LONG).show()
                                                                           runCatching { startActivity(Intent(Settings.ACTION_SECURITY_SETTINGS)) }
                                                                       } else {
                                                                           fpEnabled = enabled
@@ -2696,17 +3534,12 @@ jobs:
                                                       }
                                                       item {
                                                           MinimalSectionCard(
-                                                              title = if (isFa) "تاخیر در قفل مجدد برنامه" else "Relock Delay Timeout",
+                                                              title = s.secDelayTitle,
                                                               cardColor = card,
                                                               borderColor = border,
                                                               txtColor = txt
                                                           ) {
-                                                              Text(
-                                                                  if (isFa) "مدت زمانی که پس از یک بار باز کردن موفق (در صورت مینیمایز یا بسته شدن برنامه) دوباره رمز نخواهد:"
-                                                                  else "Grace period after unlocking before password is required again:",
-                                                                  color = sub,
-                                                                  fontSize = 11.sp
-                                                              )
+                                                              Text(s.secDelaySub, color = sub, fontSize = 11.sp)
                                                               Spacer(Modifier.height(10.dp))
                                                               Row(
                                                                   modifier = Modifier.fillMaxWidth(),
@@ -2727,7 +3560,7 @@ jobs:
                                                                       ) {
                                                                           Box(contentAlignment = Alignment.Center) {
                                                                               Text(
-                                                                                  opt.getLabel(appLang),
+                                                                                  opt.getLabel(s),
                                                                                   color = if (sel) Color.White else txt,
                                                                                   fontSize = 11.sp,
                                                                                   fontWeight = if (sel) FontWeight.Bold else FontWeight.Medium
@@ -2740,7 +3573,7 @@ jobs:
                                                       }
                                                       item {
                                                           MinimalSectionCard(
-                                                              title = if (isFa) "تغییر و مخفی‌سازی آیکون برنامه" else "App Icon Disguise",
+                                                              title = s.secIconTitle,
                                                               cardColor = card,
                                                               borderColor = border,
                                                               txtColor = txt
@@ -2750,8 +3583,8 @@ jobs:
                                                                   horizontalArrangement = Arrangement.spacedBy(10.dp)
                                                               ) {
                                                                   listOf(
-                                                                      Triple(AppIconMode.PADLOCK, R.drawable.ic_nowlock_logo, if (isFa) "قفل زرد" else "Padlock"),
-                                                                      Triple(AppIconMode.CALCULATOR, R.drawable.ic_nowlock_calculator, if (isFa) "ماشین‌حساب" else "Calculator")
+                                                                      Triple(AppIconMode.PADLOCK, R.drawable.ic_nowlock_logo, s.iconPadlock),
+                                                                      Triple(AppIconMode.CALCULATOR, R.drawable.ic_nowlock_calculator, s.iconCalculator)
                                                                   ).forEach { (modeItem, resId, titleStr) ->
                                                                       val sel = iconMode == modeItem
                                                                       Surface(
@@ -2763,11 +3596,7 @@ jobs:
                                                                               .clickable {
                                                                                   iconMode = modeItem
                                                                                   AppRepo.setIconMode(this@MainActivity, modeItem)
-                                                                                  Toast.makeText(
-                                                                                      this@MainActivity,
-                                                                                      if (isFa) "آیکون برنامه به «$titleStr» تغییر یافت" else "Icon changed to $titleStr",
-                                                                                      Toast.LENGTH_SHORT
-                                                                                  ).show()
+                                                                                  Toast.makeText(this@MainActivity, "${s.iconChangedToast}: $titleStr", Toast.LENGTH_SHORT).show()
                                                                               }
                                                                       ) {
                                                                           Row(
@@ -2790,7 +3619,7 @@ jobs:
                                                       }
                                                       item {
                                                           MinimalSectionCard(
-                                                              title = if (isFa) "امنیت، پس‌زمینه و عکس فضول‌گیر" else "Security & Recents Privacy",
+                                                              title = s.secSecurityTitle,
                                                               cardColor = card,
                                                               borderColor = border,
                                                               txtColor = txt
@@ -2799,8 +3628,8 @@ jobs:
                                                               var intruderState by remember { mutableStateOf(AppRepo.isIntruderSelfieEnabled()) }
                                                               var uninstallState by remember { mutableStateOf(AppRepo.isUninstallProtectionEnabled()) }
                                                               SettingsToggleRow(
-                                                                  title = if (isFa) "مخفی‌سازی در برنامه‌های پس‌زمینه (Recents)" else "Hide Locked Apps in Recent Apps",
-                                                                  subtitle = if (isFa) "نمایش صفحه سیاه/سفید با آیکون قفل در لیست برنامه‌های اخیر" else "Show theme-matched screen with padlock icon in Recents",
+                                                                  title = s.recentsTitle,
+                                                                  subtitle = s.recentsSub,
                                                                   checked = recentsPrivacy,
                                                                   txtColor = txt,
                                                                   subColor = sub,
@@ -2812,12 +3641,8 @@ jobs:
                                                               )
                                                               HorizontalDivider(color = border)
                                                               SettingsToggleRow(
-                                                                  title = if (isFa) "سلفی فضول‌گیر (ذخیره در گالری گوشی)" else "Intruder Selfie (Saved to Gallery)",
-                                                                  subtitle = if (isFa) {
-                                                                      "ثبت مخفیانه در آلبوم NowLock_Intruders پس از ۳ خطا (${AppRepo.getIntruderCount()} عکس)"
-                                                                  } else {
-                                                                      "Silently saved to Gallery after 3 wrong tries (${AppRepo.getIntruderCount()} saved)"
-                                                                  },
+                                                                  title = s.intruderTitle,
+                                                                  subtitle = "${s.intruderSubPrefix} (${AppRepo.getIntruderCount()})",
                                                                   checked = intruderState,
                                                                   txtColor = txt,
                                                                   subColor = sub,
@@ -2825,14 +3650,14 @@ jobs:
                                                                       intruderState = enabled
                                                                       AppRepo.setIntruderSelfieEnabled(enabled)
                                                                       if (enabled && !hasCamPerm) {
-                                                                          permissionLauncher.launch(arrayOf(Manifest.permission.CAMERA))
+                                                                          requestCameraPermissionSafely()
                                                                       }
                                                                   }
                                                               )
                                                               HorizontalDivider(color = border)
                                                               SettingsToggleRow(
-                                                                  title = if (isFa) "ویبره کوتاه هنگام خطا" else "Short Vibration on Error",
-                                                                  subtitle = if (isFa) "لرزش ملایم گوشی در صورت ورود رمز اشتباه" else "Brief haptic feedback on wrong attempt",
+                                                                  title = s.vibrateTitle,
+                                                                  subtitle = s.vibrateSub,
                                                                   checked = vibrateState,
                                                                   txtColor = txt,
                                                                   subColor = sub,
@@ -2840,8 +3665,8 @@ jobs:
                                                               )
                                                               HorizontalDivider(color = border)
                                                               SettingsToggleRow(
-                                                                  title = if (isFa) "محافظ حذف برنامه (Uninstall Protection)" else "Uninstall Protection",
-                                                                  subtitle = if (isFa) "جلوگیری از پاک شدن NowLock بدون رمز" else "Block uninstalling NowLock without password",
+                                                                  title = s.uninstallTitle,
+                                                                  subtitle = s.uninstallSub,
                                                                   checked = uninstallState,
                                                                   txtColor = txt,
                                                                   subColor = sub,
@@ -2852,7 +3677,7 @@ jobs:
                                                                           val adminComponent = ComponentName(this@MainActivity, UninstallProtectionReceiver::class.java)
                                                                           val intent = Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN).apply {
                                                                               putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, adminComponent)
-                                                                              putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION, "محافظت از NowLock در برابر حذف بدون رمز")
+                                                                              putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION, s.uninstallSub)
                                                                           }
                                                                           runCatching { startActivity(intent) }
                                                                       }
@@ -2862,16 +3687,16 @@ jobs:
                                                       }
                                                       item {
                                                           MinimalSectionCard(
-                                                              title = if (isFa) "تم و زبان برنامه" else "Theme & Language",
+                                                              title = s.secThemeLangTitle,
                                                               cardColor = card,
                                                               borderColor = border,
                                                               txtColor = txt
                                                           ) {
                                                               Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
                                                                   listOf(
-                                                                      ThemeMode.SYSTEM to (if (isFa) "خودکار سیستم" else "System"),
-                                                                      ThemeMode.LIGHT to (if (isFa) "روشن" else "Light"),
-                                                                      ThemeMode.DARK to (if (isFa) "تاریک" else "Dark")
+                                                                      ThemeMode.SYSTEM to s.themeSystem,
+                                                                      ThemeMode.LIGHT to s.themeLight,
+                                                                      ThemeMode.DARK to s.themeDark
                                                                   ).forEach { (m, label) ->
                                                                       val sel = themeMode == m
                                                                       Surface(
@@ -2889,12 +3714,7 @@ jobs:
                                                                   }
                                                               }
                                                               Spacer(Modifier.height(10.dp))
-                                                              Text(
-                                                                  if (isFa) "انتخاب زبان (فارسی، انگلیسی، آذربایجانی، لری، مازندرانی/گیلکی):"
-                                                                  else "Select Language:",
-                                                                  color = sub,
-                                                                  fontSize = 11.sp
-                                                              )
+                                                              Text(s.selectLangLabel, color = sub, fontSize = 11.sp)
                                                               Spacer(Modifier.height(6.dp))
                                                               Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
                                                                   listOf(AppLang.FA, AppLang.EN, AppLang.AZ).forEach { langItem ->
@@ -2939,7 +3759,7 @@ jobs:
                                                   LazyColumn(
                                                       modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
                                                       verticalArrangement = Arrangement.spacedBy(14.dp),
-                                                      contentPadding = PaddingValues(top = 16.dp, bottom = navBarBottomInset + 68.dp)
+                                                      contentPadding = PaddingValues(top = 16.dp, bottom = navBarBottomInset + 76.dp)
                                                   ) {
                                                       item {
                                                           Surface(
@@ -2961,12 +3781,11 @@ jobs:
                                                                   )
                                                                   Spacer(Modifier.height(12.dp))
                                                                   AnimatedRgbBrandText(
-                                                                      text = "NowLock v7.1",
+                                                                      text = "NowLock v7.5",
                                                                       fontSize = 25.sp
                                                                   )
                                                                   Text(
-                                                                      if (isFa) "طراحی و مهندسی توسط حامد و هوش مصنوعی جمینای (Gemini)"
-                                                                      else "Engineered by Hamed & Gemini AI",
+                                                                      s.aboutSubtitle,
                                                                       color = blue,
                                                                       fontSize = 13.sp,
                                                                       fontWeight = FontWeight.SemiBold,
@@ -2974,11 +3793,7 @@ jobs:
                                                                   )
                                                                   Spacer(Modifier.height(14.dp))
                                                                   Text(
-                                                                      text = if (isFa) {
-                                                                          "به NowLock خوش آمدید. ما (حامد و هوش مصنوعی جمینای) این محصول را با هدف ارائه سریع‌ترین، سبک‌ترین و مطمئن‌ترین سپر محافظتی برای برنامه‌های شخصی شما در سیستم‌عامل اندروید طراحی و مهندسی کرده‌ایم. NowLock با تکیه بر معماری پردازش بلادرنگ و استانداردهای رمزنگاری پیشرفته، بدون کاهش سرعت گوشی یا مصرف محسوس باتری، امنیت کامل حریم خصوصی شما را در هر لحظه تضمین می‌کند."
-                                                                      } else {
-                                                                          "Welcome to NowLock. Engineered by Hamed and Gemini AI, NowLock delivers an ultra-fast, lightweight, and uncompromising privacy shield for your personal Android applications. Built on a real-time dual-detection architecture and modern cryptographic standards, NowLock protects your digital life seamlessly with zero lag and minimal battery impact."
-                                                                      },
+                                                                      text = s.aboutBody,
                                                                       color = sub,
                                                                       fontSize = 12.5.sp,
                                                                       textAlign = TextAlign.Center,
@@ -2988,7 +3803,7 @@ jobs:
                                                                   HorizontalDivider(color = border)
                                                                   Spacer(Modifier.height(14.dp))
                                                                   Text(
-                                                                      if (isFa) "فناوری‌ها و زیرساخت مهندسی نرم‌افزار:" else "Software Engineering & Core Technologies:",
+                                                                      s.aboutTechTitle,
                                                                       color = txt,
                                                                       fontWeight = FontWeight.Bold,
                                                                       fontSize = 13.5.sp
@@ -2998,16 +3813,7 @@ jobs:
                                                                       modifier = Modifier.fillMaxWidth(),
                                                                       verticalArrangement = Arrangement.spacedBy(6.dp)
                                                                   ) {
-                                                                      listOf(
-                                                                          if (isFa) "• زبان برنامه‌نویسی Kotlin: پیاده‌سازی ۱۰۰٪ بومی (Native) برای دستیابی به بالاترین سرعت اجرا و پایداری در سطح سیستم‌عامل اندروید."
-                                                                          else "• Kotlin Native Architecture: 100% native compilation for maximum execution speed and OS-level stability.",
-                                                                          if (isFa) "• فریم‌ورک Jetpack Compose & Material 3: معماری رابط کاربری مدرن، واکنش‌گرا و سازگار با انواع نمایشگرها."
-                                                                          else "• Jetpack Compose & Material 3: Modern declarative UI engine with fluid animations and adaptive layouts.",
-                                                                          if (isFa) "• الگوریتم‌های رمزنگاری SHA-256 و AndroidX Biometric: حفاظت سخت‌افزاری و یک‌طرفه از داده‌های احراز هویت."
-                                                                          else "• SHA-256 Cryptography & AndroidX Biometric: Hardware-backed authentication and one-way credential hashing.",
-                                                                          if (isFa) "• زیرساخت ابری GitHub Actions & Python CI/CD: سیستم کامپایل، تست و انتشار خودکار نسخه‌های رسمی برنامه."
-                                                                          else "• GitHub Actions & Python Cloud CI/CD: Automated build, verification, and release delivery pipeline."
-                                                                      ).forEach { techLine ->
+                                                                      s.aboutTechBullets.forEach { techLine ->
                                                                           Text(
                                                                               text = techLine,
                                                                               color = sub,
@@ -3020,18 +3826,14 @@ jobs:
                                                                   HorizontalDivider(color = border)
                                                                   Spacer(Modifier.height(14.dp))
                                                                   Text(
-                                                                      if (isFa) "حریم خصوصی و امنیت اطلاعات کاربران:" else "Privacy Policy & Data Security:",
+                                                                      s.aboutPrivacyTitle,
                                                                       color = txt,
                                                                       fontWeight = FontWeight.Bold,
                                                                       fontSize = 13.5.sp
                                                                   )
                                                                   Spacer(Modifier.height(6.dp))
                                                                   Text(
-                                                                      text = if (isFa) {
-                                                                          "تمامی اطلاعات، رمزها و تنظیمات شما به صورت ۱۰۰٪ آفلاین فقط بر روی حافظه امن دستگاه خودتان نگهداری می‌شوند و هیچ داده‌ای به سرورهای خارجی ارسال نمی‌گردد."
-                                                                      } else {
-                                                                          "All passwords, configurations, and security logs remain 100% offline on your device. NowLock collects zero personal data and uses no external tracking servers."
-                                                                      },
+                                                                      text = s.aboutPrivacySummary,
                                                                       color = sub,
                                                                       fontSize = 12.sp,
                                                                       textAlign = TextAlign.Center,
@@ -3042,8 +3844,7 @@ jobs:
                                                                       onClick = { showPrivacyFullModal = true }
                                                                   ) {
                                                                       Text(
-                                                                          if (isFa) "نمایش بیشتر (متن کامل حریم خصوصی و شرایط استفاده) ⬅"
-                                                                          else "Show More (Full Privacy Policy & Terms) ➔",
+                                                                          s.aboutShowMoreBtn,
                                                                           color = blue,
                                                                           fontSize = 12.5.sp,
                                                                           fontWeight = FontWeight.Bold
@@ -3053,7 +3854,7 @@ jobs:
                                                                   HorizontalDivider(color = border)
                                                                   Spacer(Modifier.height(14.dp))
                                                                   Text(
-                                                                      if (isFa) "پشتیبانی و ارتباط مستقیم با توسعه‌دهنده (حامد):" else "Developer Support & Contact (Hamed):",
+                                                                      s.aboutContactTitle,
                                                                       color = txt,
                                                                       fontWeight = FontWeight.SemiBold,
                                                                       fontSize = 13.5.sp
@@ -3074,12 +3875,11 @@ jobs:
                                                                       Text("✉ hades.plagueis@gmail.com", color = Color.White, fontSize = 13.sp)
                                                                   }
                                                                   Spacer(Modifier.height(10.dp))
-                                                                  // Update Check Button (Shows Theme-Aware Subtitle Banner + Direct GitHub Release Link)
                                                                   OutlinedButton(
                                                                       onClick = {
                                                                           showUpdateSubtitle = true
                                                                           scope.launch {
-                                                                              delay(4000)
+                                                                              delay(6500)
                                                                               showUpdateSubtitle = false
                                                                           }
                                                                       },
@@ -3088,7 +3888,7 @@ jobs:
                                                                       border = BorderStroke(1.dp, blue)
                                                                   ) {
                                                                       Text(
-                                                                          if (isFa) "بررسی بروزرسانی برنامه" else "Check for Updates",
+                                                                          s.aboutUpdateBtn,
                                                                           color = blue,
                                                                           fontSize = 13.sp,
                                                                           fontWeight = FontWeight.SemiBold
@@ -3100,56 +3900,66 @@ jobs:
                                                   }
                                               }
                                           }
-                                          // Theme-Aware Bottom Subtitle Banner for Update Check (With Direct GitHub Download Option)
+                                          // Theme-Aware Bottom Subtitle Banner: "به سایت توسعه‌دهنده مراجعه کنید" + Clickable GitHub Link
                                           AnimatedVisibility(
                                               visible = showUpdateSubtitle,
                                               enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
                                               exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
                                               modifier = Modifier
                                                   .align(Alignment.BottomCenter)
-                                                  .padding(horizontal = 24.dp, vertical = navBarBottomInset + 16.dp)
+                                                  .padding(horizontal = 20.dp, vertical = navBarBottomInset + 16.dp)
                                           ) {
                                               Surface(
-                                                  shape = RoundedCornerShape(14.dp),
+                                                  shape = RoundedCornerShape(16.dp),
                                                   color = if (isDark) Color(0xFF000000) else Color(0xFFFFFFFF),
                                                   border = BorderStroke(1.dp, if (isDark) Color(0x33FFFFFF) else Color(0x22000000)),
-                                                  shadowElevation = 8.dp
+                                                  shadowElevation = 10.dp
                                               ) {
-                                                  Row(
-                                                      modifier = Modifier.padding(horizontal = 18.dp, vertical = 10.dp),
-                                                      verticalAlignment = Alignment.CenterVertically,
-                                                      horizontalArrangement = Arrangement.spacedBy(12.dp)
-                                                  ) {
-                                                      Text(
-                                                          text = when (appLang) {
-                                                              AppLang.FA -> "نسخه برنامه بروز است!"
-                                                              AppLang.EN -> "App version is up to date!"
-                                                              AppLang.AZ -> "برنامه نوسخه‌سی گونجل‌دیر!"
-                                                              AppLang.LOR -> "نسخه برنامه بروز است!"
-                                                              AppLang.MAZ -> "برنامه نسخه بروز هسه!"
-                                                          },
-                                                          color = if (isDark) Color(0xFFFFFFFF) else Color(0xFF000000),
-                                                          fontSize = 13.5.sp,
-                                                          fontWeight = FontWeight.SemiBold
-                                                      )
-                                                      TextButton(
-                                                          onClick = {
+                                                  Column(
+                                                      modifier = Modifier
+                                                          .fillMaxWidth()
+                                                          .clickable {
                                                               runCatching {
                                                                   startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(GITHUB_RELEASES_PAGE_URL)))
                                                               }
-                                                          },
-                                                          contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
-                                                      ) {
-                                                          Text(
-                                                              if (isFa) "گیت‌هاب ⬅" else "GitHub ➔",
-                                                              color = blue,
-                                                              fontSize = 12.sp,
-                                                              fontWeight = FontWeight.Bold
-                                                          )
-                                                      }
+                                                          }
+                                                          .padding(horizontal = 18.dp, vertical = 12.dp),
+                                                      horizontalAlignment = Alignment.CenterHorizontally
+                                                  ) {
+                                                      Text(
+                                                          text = s.updateVisitSiteMsg,
+                                                          color = if (isDark) Color(0xFFFFFFFF) else Color(0xFF000000),
+                                                          fontSize = 13.sp,
+                                                          fontWeight = FontWeight.SemiBold,
+                                                          textAlign = TextAlign.Center
+                                                      )
+                                                      Spacer(Modifier.height(4.dp))
+                                                      Text(
+                                                          text = GITHUB_SHORT_DISPLAY_LINK,
+                                                          color = blue,
+                                                          fontSize = 13.sp,
+                                                          fontWeight = FontWeight.Bold,
+                                                          textDecoration = TextDecoration.Underline,
+                                                          textAlign = TextAlign.Center
+                                                      )
                                                   }
                                               }
                                           }
+                                      }
+                                  }
+                                  // Recents Privacy Padlock Cover when paused in background switcher
+                                  if (isPausedInRecents && recentsPrivacy) {
+                                      Box(
+                                          modifier = Modifier
+                                              .fillMaxSize()
+                                              .background(if (isDark) Color(0xFF181856) else Color(0xFFF5F6FA)),
+                                          contentAlignment = Alignment.Center
+                                      ) {
+                                          Image(
+                                              painter = painterResource(id = R.drawable.ic_nowlock_logo),
+                                              contentDescription = "NowLock Privacy Shield",
+                                              modifier = Modifier.size(92.dp).clip(RoundedCornerShape(22.dp))
+                                          )
                                       }
                                   }
                                   // Translucent Glassy Top Status Bar & Bottom Navigation Bar Overlays
@@ -3157,58 +3967,18 @@ jobs:
                                   GlassyNavigationBarOverlay(isDark = isDark, modifier = Modifier.align(Alignment.BottomCenter))
                                   if (showPrivacyFullModal) {
                                       PrivacyPolicyFullModal(
+                                          s = s,
                                           isFa = isFa,
                                           isDark = isDark,
-                                          cardColor = card,
                                           txtColor = txt,
                                           subColor = sub,
                                           accentBlue = blue,
                                           onDismiss = { showPrivacyFullModal = false }
                                       )
                                   }
-                                  if (showCameraPushDialog && !hasCamPerm) {
-                                      AlertDialog(
-                                          onDismissRequest = { showCameraPushDialog = false },
-                                          title = {
-                                              Text(
-                                                  if (isFa) "درخواست دسترسی به دوربین سلفی" else "Front Camera Permission Required",
-                                                  fontWeight = FontWeight.Bold,
-                                                  fontSize = 16.sp
-                                              )
-                                          },
-                                          text = {
-                                              Text(
-                                                  if (isFa) "برای اینکه NowLock بتواند در صورت ۳ بار وارد شدن رمز اشتباه به صورت مخفیانه عکس فضول‌گیر را ثبت و در گالری ذخیره کند، لطفاً دسترسی به دوربین را تایید کنید."
-                                                  else "Please grant Camera permission so NowLock can silently capture an intruder selfie after 3 wrong password attempts.",
-                                                  fontSize = 13.sp,
-                                                  lineHeight = 20.sp
-                                              )
-                                          },
-                                          confirmButton = {
-                                              Button(
-                                                  onClick = {
-                                                      showCameraPushDialog = false
-                                                      permissionLauncher.launch(arrayOf(Manifest.permission.CAMERA))
-                                                  },
-                                                  colors = ButtonDefaults.buttonColors(containerColor = blue)
-                                              ) {
-                                                  Text(if (isFa) "اعطای دسترسی دوربین" else "Grant Camera Access", color = Color.White)
-                                              }
-                                          },
-                                          dismissButton = {
-                                              TextButton(
-                                                  onClick = {
-                                                      showCameraPushDialog = false
-                                                  }
-                                              ) {
-                                                  Text(if (isFa) "بعداً" else "Later")
-                                              }
-                                          }
-                                      )
-                                  }
                                   if (showPinDialog) {
                                       PinSetupDialog(
-                                          isFa = isFa,
+                                          s = s,
                                           onDismiss = { showPinDialog = false; pendingLockPkg = null },
                                           onSavePin = { pin ->
                                               AppRepo.setPin(pin)
@@ -3222,12 +3992,13 @@ jobs:
                                               }
                                               pendingLockPkg = null
                                               showPinDialog = false
+                                              NowLockMonitorService.startServiceSafely(this@MainActivity)
                                           }
                                       )
                                   }
                                   if (showPatternDialog) {
                                       PatternSetupDialog(
-                                          isFa = isFa,
+                                          s = s,
                                           onDismiss = { showPatternDialog = false; pendingLockPkg = null },
                                           onSavePattern = { pat ->
                                               AppRepo.setPattern(pat)
@@ -3241,6 +4012,7 @@ jobs:
                                               }
                                               pendingLockPkg = null
                                               showPatternDialog = false
+                                              NowLockMonitorService.startServiceSafely(this@MainActivity)
                                           }
                                       )
                                   }
@@ -3303,9 +4075,9 @@ jobs:
           }
           @Composable
           fun PrivacyPolicyFullModal(
+              s: UiStrings,
               isFa: Boolean,
               isDark: Boolean,
-              cardColor: Color,
               txtColor: Color,
               subColor: Color,
               accentBlue: Color,
@@ -3335,7 +4107,7 @@ jobs:
                               verticalArrangement = Arrangement.spacedBy(14.dp)
                           ) {
                               Text(
-                                  text = if (isFa) "بیانیه حریم خصوصی، امنیت داده‌ها و شرایط استفاده" else "Privacy Policy, Data Security & Terms of Use",
+                                  text = s.aboutPrivacyTitle,
                                   color = txtColor,
                                   fontSize = 18.sp,
                                   fontWeight = FontWeight.Bold
@@ -3348,7 +4120,7 @@ jobs:
                                       "۲. استاندارد رمزنگاری گذرواژه‌ها (Cryptographic Hashing)" to
                                           "پین‌کد یا الگوی ترسیمی شما هرگز به صورت متن خام (Plain-Text) ذخیره نمی‌شود. تمامی رمزها به همراه Salt اختصاصی توسط الگوریتم استاندارد یک‌طرفه SHA-256 هش شده و احراز هویت بیومتریک نیز مستقیماً از طریق زیرساخت سخت‌افزاری امن اندروید انجام می‌گیرد.",
                                       "۳. شفافیت مجوزهای سیستمی (Permissions Transparency)" to
-                                          "• سرویس دسترس‌پذیری و آمار مصرف (Accessibility & Usage Access): صرفاً جهت تشخیص لحظه‌ای باز شدن برنامه‌های قفل‌شده توسط کاربر استفاده می‌شود و هیچ محتوایی از صفحه نمایش خوانده یا ذخیره نمی‌گردد.\n• مجوز دوربین (Camera): تنها در صورت فعال بودن گزینه «سلفی فضول‌گیر» و پس از ۳ بار ورود رمز اشتباه جهت ثبت تصویر در گالری خود گوشی استفاده می‌شود.",
+                                          "• سرویس دسترس‌پذیری و آمار مصرف (Accessibility & Usage Access): صرفاً جهت تشخیص لحظه‌ای باز شدن برنامه‌های قفل‌شده توسط کاربر استفاده می‌شود و هیچ محتوایی از صفحه نمایش خوانده یا ذخیره نمی‌گردد.\n• مجوز دوربین (Camera): تنها در صورت فعال بودن گزینه «سلفی فضول‌گیر» و پس از ۳ بار ورود رمز یا اثر انگشت اشتباه جهت ثبت تصویر در گالری خود گوشی استفاده می‌شود.",
                                       "۴. مالکیت داده‌ها و عدم ردیابی (Zero Telemetry & Ads)" to
                                           "این برنامه فاقد هرگونه ردیاب تبلیغاتی (Ad Trackers)، کتابخانه‌های تحلیل رفتار کاربر (Analytics) یا تبلیغات مزاحم است. عکس‌های ثبت‌شده توسط سیستم فضول‌گیر مستقیماً در گالری گوشی شما ذخیره شده و مدیریت یا حذف آن‌ها کاملاً در اختیار شماست.",
                                       "۵. شرایط استفاده و بروزرسانی‌های امنیتی" to
@@ -3361,7 +4133,7 @@ jobs:
                                       "2. Cryptographic Credential Protection" to
                                           "Your PIN code and Pattern are never stored in plain text. They are salted and hashed using one-way SHA-256 cryptography, and fingerprint authentication is delegated directly to Android's hardware-backed Biometric API.",
                                       "3. System Permissions Transparency" to
-                                          "• Accessibility & Usage Access: Used exclusively to detect when a protected app enters the foreground so the lock screen can be displayed immediately.\n• Camera Permission: Used only when Intruder Selfie is enabled to save a photo to your local Gallery after 3 failed password attempts.",
+                                          "• Accessibility & Usage Access: Used exclusively to detect when a protected app enters the foreground so the lock screen can be displayed immediately.\n• Camera Permission: Used only when Intruder Selfie is enabled to save a photo to your local Gallery after 3 failed password or fingerprint attempts.",
                                       "4. Zero Telemetry, Zero Ads & Full Data Ownership" to
                                           "NowLock contains no third-party analytics, no advertising SDKs, and no background telemetry. Intruder photos are stored locally in your device's Gallery under your complete control.",
                                       "5. Terms of Use & Security Updates" to
@@ -3380,7 +4152,7 @@ jobs:
                               shape = RoundedCornerShape(14.dp),
                               colors = ButtonDefaults.buttonColors(containerColor = accentBlue)
                           ) {
-                              Text(if (isFa) "متوجه شدم و بستن" else "Close", color = Color.White, fontWeight = FontWeight.Bold)
+                              Text(s.btnClose, color = Color.White, fontWeight = FontWeight.Bold)
                           }
                       }
                   }
@@ -3437,7 +4209,7 @@ jobs:
           }
           @Composable
           fun PinSetupDialog(
-              isFa: Boolean,
+              s: UiStrings,
               onDismiss: () -> Unit,
               onSavePin: (String) -> Unit
           ) {
@@ -3445,12 +4217,12 @@ jobs:
               AlertDialog(
                   onDismissRequest = onDismiss,
                   title = {
-                      Text(if (isFa) "تعیین پین‌کد ۴ رقمی" else "Set 4-Digit PIN", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                      Text(s.dlgPinTitle, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                   },
                   text = {
                       Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
                           Text(
-                              if (isFa) "پین‌کد ۴ رقمی دلخواه خود را وارد کنید:" else "Enter your custom 4-digit PIN:",
+                              s.dlgPinSub,
                               fontSize = 12.sp,
                               textAlign = TextAlign.Center
                           )
@@ -3505,65 +4277,142 @@ jobs:
                           enabled = pinInput.length == 4,
                           onClick = { onSavePin(pinInput) }
                       ) {
-                          Text(if (isFa) "ذخیره" else "Save")
+                          Text(s.btnSave)
                       }
                   },
                   dismissButton = {
                       TextButton(onClick = onDismiss) {
-                          Text(if (isFa) "انصراف" else "Cancel")
+                          Text(s.btnCancel)
                       }
                   }
               )
           }
+          // Continuous Touch-Drag Pattern Setup Dialog (Draw without lifting finger, identical to Lock Screen!)
           @Composable
           fun PatternSetupDialog(
-              isFa: Boolean,
+              s: UiStrings,
               onDismiss: () -> Unit,
               onSavePattern: (String) -> Unit
           ) {
               val selectedNodes = remember { mutableStateListOf<Int>() }
+              var currentTouchPos by remember { mutableStateOf<Offset?>(null) }
+              var boxSize by remember { mutableStateOf(IntSize.Zero) }
+              fun nodeCenter(index: Int): Offset {
+                  val row = (index - 1) / 3
+                  val col = (index - 1) % 3
+                  val cellW = boxSize.width / 3f
+                  val cellH = boxSize.height / 3f
+                  return Offset(cellW * (col + 0.5f), cellH * (row + 0.5f))
+              }
+              fun checkHitNode(pos: Offset): Int? {
+                  if (boxSize.width == 0) return null
+                  val hitRadius = (boxSize.width / 6f) * 0.68f
+                  for (i in 1..9) {
+                      val c = nodeCenter(i)
+                      if (hypot(pos.x - c.x, pos.y - c.y) <= hitRadius) {
+                          return i
+                      }
+                  }
+                  return null
+              }
               AlertDialog(
                   onDismissRequest = onDismiss,
                   title = {
-                      Text(if (isFa) "تعیین الگوی قفل (حداقل ۴ نقطه)" else "Set Pattern (Min 4 Dots)", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                      Text(s.dlgPatternTitle, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                   },
                   text = {
                       Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
                           Text(
-                              if (isFa) "نقاط الگو را به ترتیب لمس کنید (${selectedNodes.size} نقطه):" else "Tap at least 4 dots in order (${selectedNodes.size} selected):",
+                              "${s.dlgPatternSub} (${selectedNodes.size})",
                               fontSize = 12.sp,
                               textAlign = TextAlign.Center
                           )
-                          Spacer(Modifier.height(12.dp))
+                          Spacer(Modifier.height(14.dp))
                           CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
-                              val rows = listOf(listOf(1, 2, 3), listOf(4, 5, 6), listOf(7, 8, 9))
-                              rows.forEach { r ->
-                                  Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(vertical = 5.dp)) {
-                                      r.forEach { node ->
-                                          val idx = selectedNodes.indexOf(node)
-                                          val isSel = idx != -1
-                                          Button(
-                                              onClick = { if (!isSel) selectedNodes.add(node) },
-                                              modifier = Modifier.size(54.dp),
-                                              shape = CircleShape,
-                                              colors = ButtonDefaults.buttonColors(
-                                                  containerColor = if (isSel) Color(0xFF5D56F5) else Color(0x225D56F5)
-                                              ),
-                                              contentPadding = PaddingValues(0.dp)
-                                          ) {
-                                              Text(
-                                                  if (isSel) "${idx + 1}" else "•",
-                                                  color = if (isSel) Color.White else Color(0xFF5D56F5),
-                                                  fontSize = 18.sp,
-                                                  fontWeight = FontWeight.Bold
+                              Box(
+                                  modifier = Modifier
+                                      .size(230.dp)
+                                      .onSizeChanged { boxSize = it }
+                                      .pointerInput(Unit) {
+                                          detectDragGestures(
+                                              onDragStart = { offset ->
+                                                  selectedNodes.clear()
+                                                  checkHitNode(offset)?.let { node ->
+                                                      if (!selectedNodes.contains(node)) selectedNodes.add(node)
+                                                  }
+                                                  currentTouchPos = offset
+                                              },
+                                              onDrag = { change, _ ->
+                                                  change.consume()
+                                                  currentTouchPos = change.position
+                                                  checkHitNode(change.position)?.let { node ->
+                                                      if (!selectedNodes.contains(node)) {
+                                                          selectedNodes.add(node)
+                                                      }
+                                                  }
+                                              },
+                                              onDragEnd = {
+                                                  currentTouchPos = null
+                                                  if (selectedNodes.size < 4) {
+                                                      selectedNodes.clear()
+                                                  }
+                                              },
+                                              onDragCancel = {
+                                                  currentTouchPos = null
+                                              }
+                                          )
+                                      }
+                              ) {
+                                  val lineColor = Color(0xFF5D56F5)
+                                  val dotColor = Color(0xFF64748B)
+                                  ComposeCanvas(modifier = Modifier.fillMaxSize()) {
+                                      for (i in 0 until selectedNodes.size - 1) {
+                                          val start = nodeCenter(selectedNodes[i])
+                                          val end = nodeCenter(selectedNodes[i + 1])
+                                          drawLine(
+                                              color = lineColor,
+                                              start = start,
+                                              end = end,
+                                              strokeWidth = 4.5.dp.toPx(),
+                                              cap = StrokeCap.Round
+                                          )
+                                      }
+                                      if (selectedNodes.isNotEmpty() && currentTouchPos != null) {
+                                          drawLine(
+                                              color = lineColor.copy(alpha = 0.65f),
+                                              start = nodeCenter(selectedNodes.last()),
+                                              end = currentTouchPos!!,
+                                              strokeWidth = 3.5.dp.toPx(),
+                                              cap = StrokeCap.Round
+                                          )
+                                      }
+                                      for (i in 1..9) {
+                                          val center = nodeCenter(i)
+                                          val isSelected = selectedNodes.contains(i)
+                                          if (isSelected) {
+                                              drawCircle(
+                                                  color = lineColor.copy(alpha = 0.24f),
+                                                  radius = 20.dp.toPx(),
+                                                  center = center
+                                              )
+                                              drawCircle(
+                                                  color = lineColor,
+                                                  radius = 8.5.dp.toPx(),
+                                                  center = center
+                                              )
+                                          } else {
+                                              drawCircle(
+                                                  color = dotColor.copy(alpha = 0.55f),
+                                                  radius = 6.dp.toPx(),
+                                                  center = center
                                               )
                                           }
                                       }
                                   }
                               }
                           }
-                          TextButton(onClick = { selectedNodes.clear() }) {
-                              Text(if (isFa) "پاک کردن" else "Clear")
+                          TextButton(onClick = { selectedNodes.clear(); currentTouchPos = null }) {
+                              Text(s.btnClear)
                           }
                       }
                   },
@@ -3572,18 +4421,18 @@ jobs:
                           enabled = selectedNodes.size >= 4,
                           onClick = { onSavePattern(selectedNodes.joinToString("-")) }
                       ) {
-                          Text(if (isFa) "ذخیره" else "Save")
+                          Text(s.btnSave)
                       }
                   },
                   dismissButton = {
                       TextButton(onClick = onDismiss) {
-                          Text(if (isFa) "انصراف" else "Cancel")
+                          Text(s.btnCancel)
                       }
                   }
               )
           }
           ''')
-          print("NowLock v7.1 project generated cleanly!")
+          print("NowLock v7.5 project generated cleanly!")
       - name: Compile Signed APK with Preinstalled JDK 17 & Gradle
         run: |
           export JAVA_HOME="${JAVA_HOME_17_X64:-/usr/lib/jvm/temurin-17-jdk-amd64}"
@@ -3600,6 +4449,6 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release delete v7.1-nowlock --repo "${{ github.repository }}" --cleanup-tag --yes 2>/dev/null || true
-          gh release create v7.1-nowlock NowLock.apk --repo "${{ github.repository }}" --target "${{ github.sha }}" --title "NowLock App v7.1 (Crash-Fixed + Play Protect Safe + Happ VPN Theme + RGB Font)" --notes "فایل نصبی آماده NowLock v7.1 با رفع کامل کرش آغازین در اندروید ۱۴/۱۵، حذف دسترسی‌های حساس اینترنت/نصب برای عبور از سپر ایمنی گوگل‌پلی، تم Happ VPN، فونت RGB و صفر هشدار در گیت‌هاب."
+          gh release delete v7.5-nowlock --repo "${{ github.repository }}" --cleanup-tag --yes 2>/dev/null || true
+          gh release create v7.5-nowlock NowLock.apk --repo "${{ github.repository }}" --target "${{ github.sha }}" --title "NowLock App v7.5 (Full 3rd-Party App Locking + Direct Permissions + Drag Pattern Setup + 5 Full Languages)" --notes "فایل نصبی آماده NowLock v7.5 با رفع کامل قفل تمام برنامه‌های گوشی (OverlayLockBridge)، رفع کرش دکمه دوربین (fragment-ktx:1.8.1)، هدایت مستقیم به صفحه مجوزها، رسم پیوسته الگو در تنظیمات، اعلان نصب برنامه جدید، سلفی فضول‌گیر در صورت خطای اثر انگشت، و ترجمه ۱۰۰٪ تمام بخش‌ها به ۵ زبان."
 
