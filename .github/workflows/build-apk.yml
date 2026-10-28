@@ -9,7 +9,7 @@ jobs:
   build-apk:
     runs-on: ubuntu-24.04
     steps:
-      - name: Generate NowLock v7.5 Project, Persistent Keystore & Icons
+      - name: Generate NowLock v7.6 Project, Persistent Keystore & Icons
         shell: python3 {0}
         run: |
           import os, base64
@@ -338,8 +338,8 @@ jobs:
                   minSdk = 26
                   targetSdk = 34
                   val runNum = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
-                  versionCode = 40 + runNum
-                  versionName = "7.5-NowLock"
+                  versionCode = 50 + runNum
+                  versionName = "7.6-NowLock"
               }
               signingConfigs {
                   getByName("debug") {
@@ -555,7 +555,7 @@ jobs:
           w("app/src/main/java/io/nowlock/app/NowLockApp.kt", r'''
           package io.nowlock.app
           /*
-           * NowLock v7.5
+           * NowLock v7.6
            * Engineered by Hamed (hades.plagueis@gmail.com) & Gemini AI
            */
           import android.Manifest
@@ -726,6 +726,8 @@ jobs:
               val statusNeedsPerm: String,
               val statusActive: String,
               val permBannerTitle: String,
+              val permRestrictedBtn: String,
+              val permRestrictedToast: String,
               val perm1Acc: String,
               val perm2Usage: String,
               val perm3Overlay: String,
@@ -808,7 +810,9 @@ jobs:
                   statusNoPassword = "⚠ بدون رمز",
                   statusNeedsPerm = "⚠ نیاز به مجوز",
                   statusActive = "✓ محافظ فعال",
-                  permBannerTitle = "برای فعالسازی کامل قفل، روی هر گزینه بزنید تا مستقیماً صفحه مجوز باز شود:",
+                  permBannerTitle = "برای فعالسازی قفل، ۴ مجوز زیر را فعال کنید (در صورت مشاهده خطای App was denied access ابتدا دکمه نارنجی زیر را بزنید):",
+                  permRestrictedBtn = "🔓 رفع خطای App was denied access (اطلاعات برنامه ⬅ ⋮ ⬅ Allow restricted settings)",
+                  permRestrictedToast = "در صفحه بازشده، روی سه‌نقطه (⋮) بالای صفحه سمت راست بزنید و Allow restricted settings را فعال کنید",
                   perm1Acc = "۱. سرویس آنی",
                   perm2Usage = "۲. آمار مصرف",
                   perm3Overlay = "۳. نمایش شناور",
@@ -895,7 +899,9 @@ jobs:
                   statusNoPassword = "⚠ No Password",
                   statusNeedsPerm = "⚠ Needs Permission",
                   statusActive = "✓ Guard Active",
-                  permBannerTitle = "Tap each button below to open its direct permission toggle:",
+                  permBannerTitle = "Enable the 4 permissions below (if Android shows 'App was denied access', tap the orange button first):",
+                  permRestrictedBtn = "🔓 Fix 'App was denied access' (Open App Info ➔ ⋮ ➔ Allow restricted settings)",
+                  permRestrictedToast = "In App Info, tap the 3-dots (⋮) at the top-right corner and tap 'Allow restricted settings'",
                   perm1Acc = "1. Instant Service",
                   perm2Usage = "2. Usage Access",
                   perm3Overlay = "3. Overlay",
@@ -978,89 +984,91 @@ jobs:
               AppLang.AZ -> UiStrings(
                   tabApps = "برنامه‌لر",
                   tabSettings = "تنظیمات",
-                  tabAbout = "برنامه حاقّیندا",
+                  tabAbout = "برنامه باره‌سینده",
                   statusNoPassword = "⚠ رمزسیز",
-                  statusNeedsPerm = "⚠ ایجازه لازیمدیر",
-                  statusActive = "✓ قورویوجو فعّالدیر",
-                  permBannerTitle = "قفلون تام ایشلمه‌سی اوچون بو ۴ ایجازه‌نی بیر توخونوشلا فعّال ائدین:",
-                  perm1Acc = "۱. آنی خیدمت",
-                  perm2Usage = "۲. ایستیفاده آمار",
-                  perm3Overlay = "۳. اوست گؤرونوش",
-                  perm4Camera = "۴. سلفی کامئرا",
-                  searchPlaceholder = "برنامه آختار...",
+                  statusNeedsPerm = "⚠ ایجازه لازیمدی",
+                  statusActive = "✓ محافظ فعّالدی",
+                  permBannerTitle = "قفلون ایشلمه‌سی اوچون بو ۴ ایجازه‌نی وئرین (اگر App was denied access خطاسی گؤردوز، اول نارنجی دوگمه‌نی وورون):",
+                  permRestrictedBtn = "🔓 App was denied access خطاسین حل ائله (App Info ⬅ ⋮ ⬅ Allow restricted settings)",
+                  permRestrictedToast = "آچیلان صفحه‌ده یوخاری ساغداکی اوچ نوقطه (⋮) اوستونه ووروب Allow restricted settings گزینه‌سینی فعّال ائلیین",
+                  perm1Acc = "۱. آنی سرویس",
+                  perm2Usage = "۲. مصرف آماری",
+                  perm3Overlay = "۳. شناور صفحه",
+                  perm4Camera = "۴. سلفی دوربینی",
+                  searchPlaceholder = "برنامه آدین آختار...",
                   filterAll = "هامیسی",
-                  filterLocked = "قفل‌لانمیش",
-                  filterUnlocked = "آچیق",
-                  selfAppBadge = "بو برنامه",
-                  secAuthTitle = "قفل اوصولو و رمز ایالتی",
-                  modePin = "پین‌کود (PIN)",
-                  modePattern = "اولگو (Pattern)",
-                  btnSetPin = "پین‌کود تعیین ائت",
-                  btnChangePin = "پین‌کودو دییش",
-                  btnSetPattern = "اولگو تعیین ائت",
-                  btnChangePattern = "اولگونو دییش",
-                  fpTitle = "بارماق ایزی ایله آچماق",
-                  fpSub = "پین‌کود و یا اولگو ایله بیرلیکده سورعتلی آچماق",
-                  fpEnrollToast = "اولجه بارماق ایزینی تئلفون تنظیماتیندا قئید ائدین",
-                  secDelayTitle = "یئنیدن قفل‌لانما گئجیکمه‌سی",
-                  secDelaySub = "برنامه آچیلدیقدان سونرا یئنیدن رمز ایستمه‌مه مودّتی:",
+                  filterLocked = "قفل اولانلار",
+                  filterUnlocked = "آچیق اولانلار",
+                  selfAppBadge = "اؤز برنامه‌میز",
+                  secAuthTitle = "قفل مدلینی و رمزی تنظیم ائله",
+                  modePin = "پین‌کد (PIN)",
+                  modePattern = "پترن (الگو)",
+                  btnSetPin = "پین‌کد قوی",
+                  btnChangePin = "پین‌کدو دییشدیر",
+                  btnSetPattern = "الگو قوی",
+                  btnChangePattern = "الگونو دییشدیر",
+                  fpTitle = "بارماق ایزی‌نن آچماق",
+                  fpSub = "پین‌کد یا الگویلا باهم تئز بارماق ایزی‌نن آچیلماق",
+                  fpEnrollToast = "اول تئلفونون تنظیماتیندا بارماق ایزی ثبت ائلیین",
+                  secDelayTitle = "دوباره قفل اولماق تاخیری",
+                  secDelaySub = "برنامه‌نی بیر دفعه آچاندان سونرا نئچه دقیقه دوباره رمز ایسته‌مه‌سین:",
                   delayImm = "فوری",
                   delay2m = "۲ دقیقه",
                   delay4m = "۴ دقیقه",
                   delay6m = "۶ دقیقه",
                   delay10m = "۱۰ دقیقه",
-                  secIconTitle = "برنامه آیکونونو دییشمک و گیزلتمک",
+                  secIconTitle = "برنامه آیکونون دییشدیرمک و گیزلتمک",
                   iconPadlock = "ساری قفل",
                   iconCalculator = "ماشین‌حساب",
-                  iconChangedToast = "برنامه آیکونو دییشدیریلدی",
-                  secSecurityTitle = "امنیّت، آرخا پلان و گیزلی سلفی",
-                  recentsTitle = "آرخا پلان برنامه‌لرینده گیزلتمه (Recents)",
-                  recentsSub = "سون برنامه‌لر سیاهیسیندا قفل آیکونلو قورویوجو صفحه گؤستر",
-                  intruderTitle = "گیزلی سلفی (یانلیش پین، اولگو و بارماق ایزی)",
-                  intruderSubPrefix = "۳ یانلیش جهددن سونرا قالئرئیایا قئید ائدیلیر",
-                  vibrateTitle = "یانلیش رمزدن سونرا قیسّا تیتره‌یش",
-                  vibrateSub = "رمز و یا بارماق ایزی یانلیش اولدوقدا یومشاق تیتره‌یش",
-                  uninstallTitle = "سیلینمه‌دن قوروما (Uninstall Protection)",
-                  uninstallSub = "رمزسیز NowLock برنامه‌سی‌نین سیلینمه‌سی‌نین قارشیسینی آل",
-                  secThemeLangTitle = "گؤرونوش و برنامه دیلی",
-                  themeSystem = "سیستئم",
-                  themeLight = "ایشیقلی",
-                  themeDark = "قارانلیق",
-                  selectLangLabel = "بوتون برنامه‌نین دیلینی سئچین:",
-                  aboutSubtitle = "حامد و جمینای (Gemini) یاپای زکاسی طرفیندن طراحی و موهندیس‌لیک ائدیلیب",
-                  aboutBody = "NowLock برنامه‌سینه خوش گلمیسینیز. بیز (حامد و جمینای یاپای زکاسی) بو محصولو اندروید تئلفونلاردا شخصی برنامه‌لرینیز اوچون ان سورعتلی، ان یüngول و ان اعتیبارلی قورویوجو قالخان اولاراق حاضیرلامیشیق. NowLock تئلفونون سورعتینی آزالتمازدان و باتارئیا مصرف ائتمه‌دن تام امنیّت یارادیر.",
-                  aboutTechTitle = "تئخنولوژیلر و یازیلیم موهندیس‌لیگی:",
+                  iconChangedToast = "برنامه‌نین آیکونو دییشیلدی",
+                  secSecurityTitle = "امنیت، پس‌زمینه و فضول‌گیر سلفی",
+                  recentsTitle = "پس‌زمینه برنامه‌لرینده گیزلتمک (Recents)",
+                  recentsSub = "سون برنامه‌لر لیستینده قفل آیکونلو محافظ صفحه گؤرسنیر",
+                  intruderTitle = "فضول‌گیر سلفی (ایشتباه رمز، الگو و بارماق ایزی)",
+                  intruderSubPrefix = "۳ دفعه ایشتباه وورولاندا گیزلیجه گالری‌ده ذخیره اولور",
+                  vibrateTitle = "ایشتباه اولاندا قیسّا ویبره",
+                  vibrateSub = "رمز یا بارماق ایزی ایشتباه اولاندا تئلفون یومشاق ویبره وورور",
+                  uninstallTitle = "برنامه‌نین پاک اولماسیندان محافظت",
+                  uninstallSub = "رمزسیز NowLock برنامه‌سی‌نین پاک اولماغی‌نین قاباغین آل",
+                  secThemeLangTitle = "تم و برنامه‌نین دیلی",
+                  themeSystem = "سیستم‌نن اوتومات",
+                  themeLight = "ایشیقلی (روشن)",
+                  themeDark = "تاریک (قارانلیق)",
+                  selectLangLabel = "کلّ برنامه‌نین دیلینی سئچین:",
+                  aboutSubtitle = "طراحی و مهندسی حامد و جمینای (Gemini) هوش مصنوعی طرفیندن",
+                  aboutBody = "NowLock برنامه‌سینه خوش گلمیسیز. بیز (حامد و جمینای هوش مصنوعی) بو برنامه‌نی اندروید گؤشولاردا شخصی برنامه‌لریزین امنیتی اوچون ان تئز، ان یونگول و مطمئن سپر کیمی طراحی ائله‌میشیک. NowLock بدون اینکه تئلفونون سرعتین آزالتسین یا باتری مصرف ائله‌سین، حریم خصوصی‌زی تام قورویور.",
+                  aboutTechTitle = "تکنولوژیلر و مهندسی زیرساختی:",
                   aboutTechBullets = listOf(
-                      "• Kotlin دیلی: ان یوکسک سورعت و سیستئم پایدارلیغی اوچون ۱۰۰٪ بومی (Native) یازیلیم.",
-                      "• Jetpack Compose & Material 3: مودئرن، آخارلی و بوتون صفحه اؤلچولرینه اویغون گؤرونوش.",
-                      "• SHA-256 شفره‌لمه و AndroidX Biometric: رمز و بارماق ایزی‌نین سخت‌افزار سوییه‌سینده قورونماسی.",
-                      "• GitHub Actions & Python CI/CD: رسمی نوسخه‌لرین اوتوماتیک قورولماسی و یاییملانماسی."
+                      "• برنامه نویسی دیلی Kotlin: پیاده‌سازی ۱۰۰٪ بومی (Native) اندرویدین ان یؤکسک سرعتی و پایدارلیغی اوچون.",
+                      "• فریم‌ورک Jetpack Compose & Material 3: مدرن، روان و هر صفحه سایزینا اویغون رابط کاربری.",
+                      "• رمزنگاری SHA-256 و AndroidX Biometric: رمز و بارماق ایزی‌نین سخت‌افزاری امنیتی.",
+                      "• زیرساخت ابری GitHub Actions & Python CI/CD: کامپایل و انتشار اوتومات نسخه‌لر."
                   ),
-                  aboutPrivacyTitle = "خصوصی حریم و معلومات امنیّتی:",
-                  aboutPrivacySummary = "بوتون رمزلرینیز و تنظیماتینیز ۱۰۰٪ آفلاین شکیلده یالنیز اؤز تئلفونونوزدا ساخلانیلیر و هئچ بیر سئروئره گؤندریلمیر.",
-                  aboutShowMoreBtn = "داها چوخ گؤستر (خصوصی حریم و ایستیفاده شرطلری) ⬅",
-                  aboutContactTitle = "گلیشدیریجی ایله بیرباشا علاقه (حامد):",
-                  aboutUpdateBtn = "بروزرسانی یوخلاماسی",
-                  updateVisitSiteMsg = "گلیشدیریجی سایتینا مراجعت ائدین:",
-                  lockPromptPin = "پین‌کودو داخیل ائدین",
-                  lockPromptPattern = "بارماغینیزی قالدیرمادان قفل اولگوسونو چکین",
-                  lockWrongAttempt = "رمز و یا بارماق ایزی یانلیشدیر، یئنیدن جهد ائدین",
+                  aboutPrivacyTitle = "حریم خصوصی و اطلاعات امنیتی:",
+                  aboutPrivacySummary = "بؤتون رمزلریز و تنظیماتیز ۱۰۰٪ آفلاین فقط اؤز گؤشوزون حافظه‌سینده قالیر و هئچ یئره گؤندریلمیر.",
+                  aboutShowMoreBtn = "بیشتر گؤستر (حریم خصوصی‌نین تام متنی) ⬅",
+                  aboutContactTitle = "پشتیبانی و سازنده‌ینن مستقیم ارتباط (حامد):",
+                  aboutUpdateBtn = "برنامه بروزرسانی‌سین یوخلا",
+                  updateVisitSiteMsg = "توسعه‌دهنده سایتینا سر وورون:",
+                  lockPromptPin = "پین‌کدو وورون",
+                  lockPromptPattern = "بارماغیزی گؤتورمه‌دن قفل الگوسون چکین",
+                  lockWrongAttempt = "رمز یا بارماق ایزی ایشتباهدیر، دوباره تلاش ائلیین",
                   lockExitBtn = "چیخیش",
-                  biometricSubtitle = "بارماق ایزی سئنسورونا توخونون",
-                  biometricUsePin = "پین‌کود ایستیفاده ائت",
-                  biometricUsePattern = "اولگو ایستیفاده ائت",
-                  dlgPinTitle = "۴ رقمی پین‌کود تعیین ائت",
-                  dlgPinSub = "ایسته‌دیگینیز ۴ رقمی پین‌کودو داخیل ائدین:",
-                  dlgPatternTitle = "قفل اولگوسو تعیین ائت (ان آزی ۴ نوقطه)",
-                  dlgPatternSub = "بارماغینیزی قالدیرمادان ان آزی ۴ نوقطه اوستوندن چکین:",
-                  btnSave = "یاadda saxla / ذخیره",
-                  btnCancel = "لغو ائت",
-                  btnClear = "تمیزله و یئنیدن چک",
-                  btnClose = "باغلا",
-                  newAppNotifTitle = "یئنی برنامه قورولدو: ",
-                  newAppNotifBody = "بو برنامه‌نی NowLock ایله قفل‌لاماق ایسته‌ایرسینیزمی؟",
-                  newAppActionLock = "قفل‌لا",
-                  newAppActionDismiss = "رد ائت"
+                  biometricSubtitle = "بارماق ایزی سنسورونا توخونون",
+                  biometricUsePin = "پین‌کددان ایستیفاده ائله",
+                  biometricUsePattern = "الگودان ایستیفاده ائله",
+                  dlgPinTitle = "۴ رقمی پین‌کد قویماق",
+                  dlgPinSub = "ایسته‌دیگیز ۴ رقمی پین‌کدو وورون:",
+                  dlgPatternTitle = "قفل الگوسو قویماق (حداقل ۴ نوقطه)",
+                  dlgPatternSub = "بارماغیزی گؤتورمه‌دن حداقل ۴ نوقطه اوستوندن چکین:",
+                  btnSave = "ذخیره ائله",
+                  btnCancel = "بوشلا (انصراف)",
+                  btnClear = "پاک ائله دوباره چک",
+                  btnClose = "بيلديم و باغلا",
+                  newAppNotifTitle = "تازه برنامه نصب اولوندو: ",
+                  newAppNotifBody = "ایستییرسیز بو برنامه‌نی NowLock قفل ائله‌سین؟",
+                  newAppActionLock = "برنامه‌نی قفل ائله",
+                  newAppActionDismiss = "رد ائله"
               )
               AppLang.LOR -> UiStrings(
                   tabApps = "برنامیا",
@@ -1069,10 +1077,12 @@ jobs:
                   statusNoPassword = "⚠ بی رمز",
                   statusNeedsPerm = "⚠ مجوز میخا",
                   statusActive = "✓ محافظ فعاله",
-                  permBannerTitle = "سی کار کردن قفل، رو هر دکمه بزنید تا مستقیم صفحه مجوزش وا بوئه:",
+                  permBannerTitle = "سی کار کردن قفل، ای ۴ مجوزنه فعال بکید (اگر خطای App was denied access دیمه، اول دکمه نارنجی نه بزنیت):",
+                  permRestrictedBtn = "🔓 رفع خطای App was denied access (اطلاعات برنامه ⬅ ⋮ ⬅ Allow restricted settings)",
+                  permRestrictedToast = "من صفحه وازبیه، ری سه‌نقطه (⋮) بالای صفحه سمت راست بزنیت و Allow restricted settings نه فعال بکید",
                   perm1Acc = "۱. سرویس آنی",
                   perm2Usage = "۲. آمار مصرف",
-                  perm3Overlay = "۳. نمایش شناور",
+                  perm3Overlay = "۳. صفحه شناور",
                   perm4Camera = "۴. دوربین سلفی",
                   searchPlaceholder = "پیا کردن برنامه...",
                   filterAll = "همه",
@@ -1156,10 +1166,12 @@ jobs:
                   statusNoPassword = "⚠ بی رمز",
                   statusNeedsPerm = "⚠ مجوز خانه",
                   statusActive = "✓ محافظ فعاله",
-                  permBannerTitle = "تا قفل کامل کار هاکنه، هر دکمه ره بزنین تا مستقیم مجوز صفحه وا بوو:",
+                  permBannerTitle = "تا قفل کار هاکنه، این ۴ مجوز ره فعال هاکنین (اگه App was denied access خطا بدیین، اول نارنجی دکمه ره بزنین):",
+                  permRestrictedBtn = "🔓 رفع خطای App was denied access (اطلاعات برنامه ⬅ ⋮ ⬅ Allow restricted settings)",
+                  permRestrictedToast = "صفحه‌ای که وا بَیّه دله، سه‌نقطه (⋮) بالای صفحه سمت راست سر بزنین و Allow restricted settings ره فعال هاکنین",
                   perm1Acc = "۱. آنی سرویس",
                   perm2Usage = "۲. مصرف آمار",
-                  perm3Overlay = "۳. شناور هارشا",
+                  perm3Overlay = "۳. شناور صفحه",
                   perm4Camera = "۴. سلفی دوربین",
                   searchPlaceholder = "برنامه پدا هاکردن...",
                   filterAll = "همه",
@@ -1528,8 +1540,8 @@ jobs:
                               }
                           }
                       }
-                      // Launch LockScreenActivity immediately (while our TYPE_APPLICATION_OVERLAY window is visible on screen, bypassing Android 14/15 BAL restrictions!)
-                      startLockActivityNow(appCtx, targetPkg)
+                      // Launch LockScreenActivity immediately using the caller Service/Activity context + overlay BAL exemption
+                      startLockActivityNow(ctx, targetPkg)
                       mainHandler.postDelayed({
                           if (!LockScreenActivity.isShowing && isShieldAttached) {
                               startLockActivityNow(appCtx, targetPkg)
@@ -1712,7 +1724,7 @@ jobs:
               private const val KEY_LOCKED_PKGS = "nowlock_locked_pkgs"
               private const val KEY_LOCKED_PKGS_CSV = "nowlock_locked_pkgs_csv"
               private const val KEY_THEME_MODE = "nowlock_theme_mode"
-              private const val KEY_APP_LANG = "nowlock_app_lang"
+              private const val KEY_APP_LANG = "nowlock_app_lang_v76"
               private const val KEY_VIBRATE = "nowlock_vibrate_on_error"
               private const val KEY_INTRUDER = "nowlock_intruder_selfie"
               private const val KEY_INTRUDER_COUNT = "nowlock_intruder_count"
@@ -1852,7 +1864,8 @@ jobs:
                   }
               }
               fun evaluateForegroundPackage(pkg: String, myPkg: String): Boolean {
-                  if (pkg.isBlank() || pkg == myPkg) return false
+                  if (pkg.isBlank()) return false
+                  if (pkg == myPkg && LockScreenActivity.isShowing) return false
                   if (pkg.contains("systemui") ||
                       pkg.contains("inputmethod") ||
                       pkg.contains("keyboard") ||
@@ -1924,7 +1937,7 @@ jobs:
                   runCatching { ThemeMode.valueOf(prefs.getString(KEY_THEME_MODE, ThemeMode.SYSTEM.name) ?: ThemeMode.SYSTEM.name) }.getOrDefault(ThemeMode.SYSTEM)
               fun setThemeMode(m: ThemeMode) = prefs.edit().putString(KEY_THEME_MODE, m.name).commit()
               fun getAppLang(): AppLang =
-                  runCatching { AppLang.valueOf(prefs.getString(KEY_APP_LANG, AppLang.FA.name) ?: AppLang.FA.name) }.getOrDefault(AppLang.FA)
+                  runCatching { AppLang.valueOf(prefs.getString(KEY_APP_LANG, AppLang.EN.name) ?: AppLang.EN.name) }.getOrDefault(AppLang.EN)
               fun setAppLang(lang: AppLang) = prefs.edit().putString(KEY_APP_LANG, lang.name).commit()
               fun isDarkEffective(ctx: Context): Boolean {
                   return when (getThemeMode()) {
@@ -2194,7 +2207,11 @@ jobs:
               override fun onCreate() {
                   super.onCreate()
                   AppRepo.init(this)
-                  promoteToForeground()
+                  // Cancel any legacy ongoing notification from older versions so the notification bar stays 100% clean!
+                  runCatching {
+                      val nm = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+                      nm?.cancel(1001)
+                  }
                   runCatching {
                       registerReceiver(dynamicReceiver, IntentFilter(Intent.ACTION_SCREEN_OFF))
                       val pkgFilter = IntentFilter(Intent.ACTION_PACKAGE_ADDED).apply { addDataScheme("package") }
@@ -2205,60 +2222,11 @@ jobs:
               }
               override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
                   AppRepo.init(this)
-                  promoteToForeground()
                   if (!isRunning) {
                       isRunning = true
                       handler.post(pollRunnable)
                   }
                   return START_STICKY
-              }
-              private fun promoteToForeground() {
-                  try {
-                      val channelId = "nowlock_guard_channel"
-                      val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-                      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                          val channel = NotificationChannel(
-                              channelId,
-                              "NowLock Guard",
-                              NotificationManager.IMPORTANCE_LOW
-                          ).apply {
-                              setShowBadge(false)
-                          }
-                          nm.createNotificationChannel(channel)
-                      }
-                      val s = getStrings(AppRepo.getAppLang())
-                      val pendingIntent = PendingIntent.getActivity(
-                          this,
-                          0,
-                          Intent(this, MainActivity::class.java),
-                          PendingIntent.FLAG_IMMUTABLE
-                      )
-                      val notification = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                          Notification.Builder(this, channelId)
-                              .setContentTitle("NowLock")
-                              .setContentText(s.statusActive)
-                              .setSmallIcon(R.drawable.ic_nowlock_logo)
-                              .setContentIntent(pendingIntent)
-                              .setOngoing(true)
-                              .build()
-                      } else {
-                          @Suppress("DEPRECATION")
-                          Notification.Builder(this)
-                              .setContentTitle("NowLock")
-                              .setContentText(s.statusActive)
-                              .setSmallIcon(R.drawable.ic_nowlock_logo)
-                              .setContentIntent(pendingIntent)
-                              .setOngoing(true)
-                              .build()
-                      }
-                      if (Build.VERSION.SDK_INT >= 34) {
-                          startForeground(1001, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
-                      } else {
-                          startForeground(1001, notification)
-                      }
-                  } catch (t: Throwable) {
-                      runCatching { stopSelf() }
-                  }
               }
               override fun onDestroy() {
                   isRunning = false
@@ -2271,11 +2239,7 @@ jobs:
                   fun startServiceSafely(ctx: Context) {
                       runCatching {
                           val intent = Intent(ctx, NowLockMonitorService::class.java)
-                          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                              ctx.startForegroundService(intent)
-                          } else {
-                              ctx.startService(intent)
-                          }
+                          ctx.startService(intent)
                       }
                   }
               }
@@ -3053,6 +3017,14 @@ jobs:
                   super.onPause()
                   isPausedInRecentsState.value = true
               }
+              override fun onStop() {
+                  super.onStop()
+                  if (!isChangingConfigurations && !LockScreenActivity.isShowing) {
+                      if (AppRepo.getRelockDelayMinutes() <= 0) {
+                          AppRepo.unlockedSession.remove(packageName)
+                      }
+                  }
+              }
               override fun onResume() {
                   super.onResume()
                   isPausedInRecentsState.value = false
@@ -3287,6 +3259,26 @@ jobs:
                                                                       fontWeight = FontWeight.Bold,
                                                                       fontSize = 11.5.sp
                                                                   )
+                                                                  if (!hasAccPerm || !hasUsagePerm) {
+                                                                      Button(
+                                                                          onClick = {
+                                                                              Toast.makeText(this@MainActivity, s.permRestrictedToast, Toast.LENGTH_LONG).show()
+                                                                              openDirectAppDetailsSettings(this@MainActivity)
+                                                                          },
+                                                                          modifier = Modifier.fillMaxWidth(),
+                                                                          contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+                                                                          colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD97706)),
+                                                                          shape = RoundedCornerShape(10.dp)
+                                                                      ) {
+                                                                          Text(
+                                                                              s.permRestrictedBtn,
+                                                                              fontSize = 10.5.sp,
+                                                                              fontWeight = FontWeight.Bold,
+                                                                              color = Color.White,
+                                                                              textAlign = TextAlign.Center
+                                                                          )
+                                                                      }
+                                                                  }
                                                                   Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                                                       Button(
                                                                           onClick = { openDirectAccessibilitySettings(this@MainActivity) },
@@ -3796,7 +3788,7 @@ jobs:
                                                                   )
                                                                   Spacer(Modifier.height(12.dp))
                                                                   AnimatedRgbBrandText(
-                                                                      text = "NowLock v7.5",
+                                                                      text = "NowLock v7.6",
                                                                       fontSize = 25.sp
                                                                   )
                                                                   Text(
@@ -4446,7 +4438,6 @@ jobs:
                   }
               )
           }
-
           ''')
           print("NowLock v7.5 project generated cleanly!")
       - name: Compile Signed APK with JDK 17 & Gradle 8.7
@@ -4464,6 +4455,6 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release delete v7.5-nowlock --repo "${{ github.repository }}" --cleanup-tag --yes 2>/dev/null || true
-          gh release create v7.5-nowlock NowLock.apk --repo "${{ github.repository }}" --target "${{ github.sha }}" --title "NowLock App v7.5 (Full 3rd-Party App Locking + Direct Permissions + Drag Pattern Setup + 5 Full Languages)" --notes "فایل نصبی آماده NowLock v7.5 با رفع کامل قفل تمام برنامه‌های گوشی (OverlayLockBridge)، رفع کرش دکمه دوربین (fragment-ktx:1.8.1)، هدایت مستقیم به صفحه مجوزها، رسم پیوسته الگو در تنظیمات، اعلان نصب برنامه جدید، سلفی فضول‌گیر در صورت خطای اثر انگشت، و ترجمه ۱۰۰٪ تمام بخش‌ها به ۵ زبان."
+          gh release delete v7.6-nowlock --repo "${{ github.repository }}" --cleanup-tag --yes 2>/dev/null || true
+          gh release create v7.6-nowlock NowLock.apk --repo "${{ github.repository }}" --target "${{ github.sha }}" --title "NowLock App v7.6 (Restricted Settings Unlocker + English Default + Iranian Azerbaijani + No Ongoing Notification)" --notes "فایل نصبی آماده NowLock v7.6 با دکمه اختصاصی باز کردن قفل تنظیمات محدودشده اندروید (Allow Restricted Settings)، زبان پیش‌فرض انگلیسی، گویش اصیل ترکی آذربایجانی ایران (تبریز/ارومیه/اردبیل)، حذف اعلان دائمی نوار وضعیت (نمایش اعلان فقط هنگام نصب برنامه جدید)، و قفل تضمینی برنامه‌ها."
 
