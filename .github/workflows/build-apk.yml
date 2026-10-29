@@ -9,7 +9,7 @@ jobs:
   build-apk:
     runs-on: ubuntu-24.04
     steps:
-      - name: Generate NowLock v9.0 Project, Persistent Keystore & Icons
+      - name: Generate NowLock v9.0.1 Project, Persistent Keystore & Icons
         shell: python3 {0}
         run: |
           import os, base64
@@ -484,8 +484,8 @@ jobs:
                   minSdk = 26
                   targetSdk = 36
                   val runNum = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
-                  versionCode = 130 + runNum
-                  versionName = "9.0-NowLock"
+                  versionCode = 131 + runNum
+                  versionName = "9.0.1-NowLock"
               }
               signingConfigs {
                   getByName("debug") {
@@ -608,10 +608,10 @@ jobs:
                   android:label="@string/app_name"
                   android:supportsRtl="true"
                   android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
-                  <!-- Main Activity (exported="false" so Android 10-16 never synthesizes a fallback icon when Launcher aliases are hidden!) -->
+                  <!-- Main Activity -->
                   <activity
                       android:name=".MainActivity"
-                      android:exported="false"
+                      android:exported="true"
                       android:configChanges="uiMode|locale|layoutDirection|orientation|screenSize|smallestScreenSize|screenLayout|density"
                       android:launchMode="singleTop" />
                   <!-- Default Yellow Padlock Launcher Alias -->
@@ -736,7 +736,7 @@ jobs:
           w("app/src/main/java/io/nowlock/app/NowLockApp.kt", r'''
           package io.nowlock.app
           /*
-           * NowLock v9.0
+           * NowLock v9.0.1
            * Engineered by Hamed (hades.plagueis@gmail.com) & Gemini AI
            */
           import android.Manifest
@@ -810,6 +810,7 @@ jobs:
           import android.widget.TextView
           import android.widget.Toast
           import androidx.activity.OnBackPressedCallback
+          import androidx.activity.compose.BackHandler
           import androidx.activity.compose.setContent
           import androidx.biometric.BiometricManager
           import androidx.biometric.BiometricPrompt
@@ -911,7 +912,7 @@ jobs:
           import kotlin.random.Random
           const val GITHUB_RELEASES_PAGE_URL = "https://github.com/CodeGenesis98/ZeroFlash-AppLock/releases"
           const val GITHUB_SHORT_DISPLAY_LINK = "github.com/CodeGenesis98/ZeroFlash-AppLock"
-          enum class ThemeMode { SYSTEM, DARK, LIGHT }
+          enum class ThemeMode { SYSTEM, LIGHT, DARK, AMOLED }
           // 5 Fully Localized Languages: Persian, English, Iranian Azerbaijani, Luri, Mazandarani/Gilaki
           enum class AppLang(val code: String, val nativeLabel: String, val isRtl: Boolean) {
               FA("FA", "فارسی", true),
@@ -1014,6 +1015,17 @@ jobs:
               val themeSystem: String,
               val themeLight: String,
               val themeDark: String,
+              val themeAmoled: String,
+              val evWrongPin: String,
+              val evWrongPattern: String,
+              val evWrongFp: String,
+              val evDecoyUsed: String,
+              val evLockoutTriggered: String,
+              val evUninstallAttempt: String,
+              val evPermRevokedAcc: String,
+              val evPermRevokedUsage: String,
+              val evPermRevokedOverlay: String,
+              val evPermRevokedCam: String,
               val selectLangLabel: String,
               val aboutSubtitle: String,
               val aboutBody: String,
@@ -1058,6 +1070,19 @@ jobs:
               val privacyModalSections: List<Pair<String, String>>
           ) {
               fun formatCooldown(seconds: Int): String = lockCooldownTemplate.replace("{s}", seconds.toString())
+              fun translateSecurityEvent(code: String): String = when (code) {
+                  "WRONG_PIN", "PIN" -> evWrongPin
+                  "WRONG_PATTERN", "Pattern" -> evWrongPattern
+                  "WRONG_FP", "Fingerprint" -> evWrongFp
+                  "DECOY_USED" -> evDecoyUsed
+                  "LOCKOUT_TRIGGERED" -> evLockoutTriggered
+                  "UNINSTALL_ATTEMPT" -> evUninstallAttempt
+                  "PERM_REVOKED_ACC" -> evPermRevokedAcc
+                  "PERM_REVOKED_USAGE" -> evPermRevokedUsage
+                  "PERM_REVOKED_OVERLAY" -> evPermRevokedOverlay
+                  "PERM_REVOKED_CAM" -> evPermRevokedCam
+                  else -> code
+              }
           }
           fun getStrings(lang: AppLang): UiStrings = when (lang) {
               AppLang.FA -> UiStrings(
@@ -1093,12 +1118,12 @@ jobs:
                   repAnsYesStopped = "بله، متوقف شده است ✕",
                   repAnsNoRunning = "خیر، در حال اجراست ✓",
                   repLogsTitle = "گزارش هوشمند تلاش‌های ناموفق",
-                  repFailedCountLabel = "تعداد تلاش‌های ناموفق جدید:",
+                  repFailedCountLabel = "تعداد وقایع و تلاش‌های ثبت‌شده:",
                   repNoLogsMsg = "هیچ تلاش ناموفقی ثبت نشده است.",
                   repTargetAppLabel = "برنامه هدف:",
                   repTimeLabel = "زمان رخداد:",
                   repMethodLabel = "روش تلاش:",
-                  repAutoClearNote = "نکته: این گزارش‌ها پس از مطالعه و خروج از این تب به صورت خودکار پاک می‌شوند تا انباشته نشوند.",
+                  repAutoClearNote = "گزارش‌های امنیتی تا زمانی که دکمه زیر را نزنید باقی می‌مانند و با تغییر زبان برنامه به زبان انتخابی ترجمه می‌شوند.",
                   repClearNowBtn = "✓ خوانده شد و پاکسازی گزارش‌ها",
                   statusNoPassword = "⚠ بدون رمز",
                   statusNeedsPerm = "⚠ نیاز به مجوز",
@@ -1132,7 +1157,7 @@ jobs:
                   delay4m = "۴ دقیقه",
                   delay6m = "۶ دقیقه",
                   delay10m = "۱۰ دقیقه",
-                  secIconTitle = "تغییر آیکون، مخفی‌سازی کامل و شورتکات کنترل‌سنتر",
+                  secIconTitle = "تغییر آیکون برنامه در منوی گوشی",
                   iconPadlock = "قفل زرد",
                   iconCalculator = "ماشین‌حساب",
                   iconHidden = "مخفی در لیست برنامه‌ها",
@@ -1153,6 +1178,17 @@ jobs:
                   themeSystem = "خودکار سیستم",
                   themeLight = "روشن",
                   themeDark = "تاریک",
+                  themeAmoled = "AMOLED (سیاه)",
+                  evWrongPin = "پین‌کد اشتباه وارد شد",
+                  evWrongPattern = "الگوی قفل اشتباه رسم شد",
+                  evWrongFp = "اثر انگشت ناموفق ثبت شد",
+                  evDecoyUsed = "ورود با رمز فریب (نمایش کرش ساختگی)",
+                  evLockoutTriggered = "قفل موقت پس از ۱۰ خطای متوالی فعال شد",
+                  evUninstallAttempt = "تلاش برای لغو دسترسی ادمین / حذف برنامه",
+                  evPermRevokedAcc = "مجوز سرویس آنی (Accessibility) غیرفعال شد",
+                  evPermRevokedUsage = "مجوز آمار مصرف (Usage Access) غیرفعال شد",
+                  evPermRevokedOverlay = "مجوز نمایش شناور (Overlay) غیرفعال شد",
+                  evPermRevokedCam = "مجوز دوربین سلفی غیرفعال شد",
                   selectLangLabel = "انتخاب زبان کل برنامه:",
                   aboutSubtitle = "طراحی و مهندسی توسط حامد و هوش مصنوعی جمینای (Gemini)",
                   aboutBody = "به NowLock خوش آمدید. این برنامه ثمره ساعت‌ها تلاش مستمر، مهندسی دقیق و آزمون‌وخطای هدفمند توسط حامد و هوش مصنوعی جمینای (Gemini) است تا یک ابزار امنیتی واقعاً کارآمد، پایدار و سبک برای اندروید شکل بگیرد. از دیدگاه فنی، هیچ برنامه‌ی جانبی (Third-Party) که خارج از هسته‌ی اصلی سیستم‌عامل فعالیت می‌کند نمی‌تواند ادعای مسدودسازی صددرصدی و مطلق تمامی اکشن‌ها یا مسیرهای سیستمی را داشته باشد؛ با این حال، ما در NowLock با ترکیب هوشمندترین مکانیزم‌های مجاز اندروید، یکی از کامل‌ترین، سریع‌ترین و مطمئن‌ترین نسخه‌های ممکن در این حوزه را بدون افت سرعت گوشی یا مصرف محسوس باتری پیاده‌سازی کرده‌ایم.",
@@ -1161,7 +1197,8 @@ jobs:
                       "• زبان برنامه‌نویسی Kotlin: پیاده‌سازی ۱۰۰٪ بومی (Native) برای دستیابی به بالاترین سرعت اجرا و پایداری در سطح سیستم‌عامل اندروید.",
                       "• فریم‌ورک Jetpack Compose & Material 3: معماری رابط کاربری مدرن، واکنش‌گرا و سازگار با انواع نمایشگرها.",
                       "• الگوریتم‌های رمزنگاری SHA-256 و AndroidX Biometric: حفاظت سخت‌افزاری و یک‌طرفه از داده‌های احراز هویت.",
-                      "• زیرساخت ابری GitHub Actions & Python CI/CD: سیستم کامپایل، تست و انتشار خودکار نسخه‌های رسمی برنامه."
+                      "• زیرساخت ابری GitHub Actions & Python CI/CD: سیستم کامپایل، تست و انتشار خودکار نسخه‌های رسمی برنامه.",
+                      "• اصالت سورس‌کد و کتابخانه‌های متن‌باز (Open-Source Attribution): سورس‌کد اپلیکیشن NowLock به صورت ۱۰۰٪ اختصاصی و از پایه توسط حامد و جمینای نوشته شده و از هیچ برنامه مشابهی کپی‌برداری نشده است؛ در توسعه زیرساخت آن تنها از کتابخانه‌های رسمی و متن‌باز شرکت Google (پروژه AOSP، Jetpack Compose، Material 3 و AndroidX Biometric) و شرکت JetBrains (زبان Kotlin و Coroutines) تحت مجوز رسمی Apache License 2.0 استفاده شده است."
                   ),
                   aboutPrivacyTitle = "حریم خصوصی، امنیت داده‌ها و مسئولیت کاربر:",
                   aboutPrivacySummary = "تمامی تنظیمات و گذرواژه‌های شما به صورت ۱۰۰٪ آفلاین فقط روی حافظه دستگاه خودتان ذخیره می‌شوند و هیچ سرور خارجی یا پشتیبان ابری برای دسترسی به آن‌ها وجود ندارد؛ از این‌رو امکان بازیابی رمز فراموش‌شده از سوی ما وجود نداشته و مسئولیت به خاطر سپردن پین‌کد یا الگو و هرگونه پیامد ناشی از فراموشی آن، تماماً بر عهده خود کاربر است.",
@@ -1245,12 +1282,12 @@ jobs:
                   repAnsYesStopped = "Yes, service stopped ✕",
                   repAnsNoRunning = "No, actively running ✓",
                   repLogsTitle = "Smart Failed Attempts Report",
-                  repFailedCountLabel = "Unread failed attempts:",
+                  repFailedCountLabel = "Recorded security incidents:",
                   repNoLogsMsg = "No failed unlock attempts recorded.",
                   repTargetAppLabel = "Target App:",
                   repTimeLabel = "Time Occurred:",
                   repMethodLabel = "Auth Method:",
-                  repAutoClearNote = "Note: Once read, these logs are automatically cleared when you leave this tab so data never piles up.",
+                  repAutoClearNote = "Security logs remain saved until you tap the button below and dynamically translate into your selected language.",
                   repClearNowBtn = "✓ Mark as Read & Clear Now",
                   statusNoPassword = "⚠ No Password",
                   statusNeedsPerm = "⚠ Needs Permission",
@@ -1284,7 +1321,7 @@ jobs:
                   delay4m = "4 Min",
                   delay6m = "6 Min",
                   delay10m = "10 Min",
-                  secIconTitle = "App Icon Disguise, Stealth Hide & Control Center",
+                  secIconTitle = "App Icon Disguise",
                   iconPadlock = "Padlock",
                   iconCalculator = "Calculator",
                   iconHidden = "Hide from App List",
@@ -1305,6 +1342,17 @@ jobs:
                   themeSystem = "System",
                   themeLight = "Light",
                   themeDark = "Dark",
+                  themeAmoled = "AMOLED Black",
+                  evWrongPin = "Failed PIN attempt",
+                  evWrongPattern = "Failed Pattern attempt",
+                  evWrongFp = "Failed Fingerprint attempt",
+                  evDecoyUsed = "Decoy password triggered (Fake Crash shown)",
+                  evLockoutTriggered = "10+ failed attempts lockout triggered",
+                  evUninstallAttempt = "Attempt to disable Device Admin / Uninstall",
+                  evPermRevokedAcc = "Accessibility Service permission was disabled",
+                  evPermRevokedUsage = "Usage Data Access permission was disabled",
+                  evPermRevokedOverlay = "Overlay permission was disabled",
+                  evPermRevokedCam = "Selfie Camera permission was disabled",
                   selectLangLabel = "Select Full Application Language:",
                   aboutSubtitle = "Engineered by Hamed & Gemini AI",
                   aboutBody = "Welcome to NowLock. This product is the culmination of extensive engineering, relentless testing, and fine-tuning by Hamed and Gemini AI to build a genuinely practical and dependable privacy shield for Android. From an OS architecture standpoint, no third-party application operating outside the system kernel can guarantee an absolute, unbreakable lock over every system-level action; nevertheless, NowLock harnesses the most effective mechanisms available on Android to deliver one of the most capable, responsive, and reliable versions achievable in its class—with zero lag and minimal battery impact.",
@@ -1313,7 +1361,8 @@ jobs:
                       "• Kotlin Native Architecture: 100% native compilation for maximum execution speed and OS-level stability.",
                       "• Jetpack Compose & Material 3: Modern declarative UI engine with fluid animations and adaptive layouts.",
                       "• SHA-256 Cryptography & AndroidX Biometric: Hardware-backed authentication and one-way credential hashing.",
-                      "• GitHub Actions & Python Cloud CI/CD: Automated build, verification, and release delivery pipeline."
+                      "• GitHub Actions & Python Cloud CI/CD: Automated build, verification, and release delivery pipeline.",
+                      "• Original Source Code & Open-Source Attribution: NowLock's application source code is 100% original and engineered from scratch by Hamed and Gemini AI without copying any third-party app locker. It is built upon official open-source SDKs from Google (Android Open Source Project, Jetpack Compose, Material 3, AndroidX Biometric) and JetBrains (Kotlin Standard Library & Coroutines) licensed under the Apache License 2.0."
                   ),
                   aboutPrivacyTitle = "Privacy, Data Security & User Responsibility:",
                   aboutPrivacySummary = "All credentials and configurations remain 100% offline on your device with no external servers or cloud backups. Because we cannot remotely access or reset your credentials, the responsibility for remembering your PIN or Pattern—and any consequences resulting from forgetting it—rests solely with you.",
@@ -1402,7 +1451,7 @@ jobs:
                   repTargetAppLabel = "هدف برنامه:",
                   repTimeLabel = "واختی:",
                   repMethodLabel = "روش:",
-                  repAutoClearNote = "نکته: بو گزارشلر اوخوناندان سونرا تب‌دن چیخان کیمی اوتومات پاک اولور تا اوست-اوسته ییغیلماسین.",
+                  repAutoClearNote = "بو گزارشلر آشاغیداکی دوگمه‌نی وورمایینجا پاک اولمور و دیلی دییشنده اوتومات ترجمه اولور.",
                   repClearNowBtn = "✓ اوخودوم و گزارشی پاک ائله",
                   statusNoPassword = "⚠ رمزسیز",
                   statusNeedsPerm = "⚠ ایجازه لازیمدی",
@@ -1436,7 +1485,7 @@ jobs:
                   delay4m = "۴ دقیقه",
                   delay6m = "۶ دقیقه",
                   delay10m = "۱۰ دقیقه",
-                  secIconTitle = "آیکونو دییشدیرمک، تام گیزلتمک و کنترل‌سنتر شورتکاتی",
+                  secIconTitle = "برنامه آیکونون دییشدیرمک",
                   iconPadlock = "ساری قفل",
                   iconCalculator = "ماشین‌حساب",
                   iconHidden = "برنامه‌لر لیستیندن گیزلت",
@@ -1455,8 +1504,19 @@ jobs:
                   uninstallSub = "رمزسیز NowLock برنامه‌سی‌نین پاک اولماغی‌نین قاباغین آل",
                   secThemeLangTitle = "برنامه‌نین تمی",
                   themeSystem = "سیستم‌نن اوتومات",
-                  themeLight = "ایشیقلی (روشن)",
-                  themeDark = "تاریک (قارانلیق)",
+                  themeLight = "ایشیقلی",
+                  themeDark = "تاریک",
+                  themeAmoled = "AMOLED (قارا)",
+                  evWrongPin = "ایشتباه پین‌کد وورولدو",
+                  evWrongPattern = "ایشتباه قفل الگوسو چکیلدی",
+                  evWrongFp = "ناموفق بارماق ایزی ثبت اولوندو",
+                  evDecoyUsed = "فریب رمزی وورولدو (ساختگی کرش گؤرسندی)",
+                  evLockoutTriggered = "۱۰ دفعه ایشتباهدان سونرا موقت قفل فعّال اولدو",
+                  evUninstallAttempt = "ادمین ایجازه‌سین لغو ائله‌مک / برنامه‌نی پاک ائله‌مک تلاشی",
+                  evPermRevokedAcc = "آنی سرویس (Accessibility) ایجازه‌سی باغلاندی",
+                  evPermRevokedUsage = "مصرف آماری (Usage Access) ایجازه‌سی باغلاندی",
+                  evPermRevokedOverlay = "شناور صفحه (Overlay) ایجازه‌سی باغلاندی",
+                  evPermRevokedCam = "سلفی دوربینی ایجازه‌سی باغلاندی",
                   selectLangLabel = "کلّ برنامه‌نین دیلینی سئچین:",
                   aboutSubtitle = "طراحی و مهندسی حامد و جمینای (Gemini) هوش مصنوعی طرفیندن",
                   aboutBody = "NowLock برنامه‌سینه خوش گلمیسیز. بو برنامه حامد و جمینای (Gemini) هوش مصنوعی طرفیندن چوخلو تلاش، دقیق مهندسی و بارها تست ائدیلمک نتیجه‌سینده دوزلیب تا اندرویدده واقعاً ایشه‌غلن و محکم بیر محافظ اولسون. سیستم‌عاملین ساختارینا گؤره، هئچ بیر جانبی (Third-Party) برنامه ادعا ائلیه بیلمز کی بؤتون سیستمی اکشن‌لری و یوللاری یوزده‌یوز و مطلق شکیلده باغلاییر؛ اما بیز NowLock-دا اندرویدین ان یاخشی روشلرین بیر یئره ییغمیشیق تا بو سبک برنامه‌لرین ایچینده ان کامل، ان تئز و ان مطمئن نسخه‌لردن بیرینی بدون سرعت دوشمه‌سی و باتری مصرفی سیزه تقدیم ائلیک.",
@@ -1465,7 +1525,8 @@ jobs:
                       "• برنامه نویسی دیلی Kotlin: پیاده‌سازی ۱۰۰٪ بومی (Native) اندرویدین ان یؤکسک سرعتی و پایدارلیغی اوچون.",
                       "• فریم‌ورک Jetpack Compose & Material 3: مدرن، روان و هر صفحه سایزینا اویغون رابط کاربری.",
                       "• رمزنگاری SHA-256 و AndroidX Biometric: رمز و بارماق ایزی‌نین سخت‌افزاری امنیتی.",
-                      "• زیرساخت ابری GitHub Actions & Python CI/CD: کامپایل و انتشار اوتومات نسخه‌لر."
+                      "• زیرساخت ابری GitHub Actions & Python CI/CD: کامپایل و انتشار اوتومات نسخه‌لر.",
+                      "• سورس‌کد اصالتی و آچیق‌متن کتابخانه‌لر: NowLock برنامه‌سی‌نین سورس‌کدو ۱۰۰٪ صفریدن حامد و جمینای طرفیندن یازیلیب و هئچ بیر باشقا برنامه‌دن کپی اولونماییب؛ زیرساختیندا فقط Google (Jetpack Compose, Material 3, AndroidX) و JetBrains (Kotlin) رسمی کتابخانه‌لریندن Apache 2.0 مجوزویلا ایستیفاده اولونوب."
                   ),
                   aboutPrivacyTitle = "حریم خصوصی، اطلاعات امنیتی و کاربرین مسئولیتی:",
                   aboutPrivacySummary = "بؤتون رمزلریز و تنظیماتیز ۱۰۰٪ آفلاین فقط اؤز گؤشوزون حافظه‌سینده قالیر و هئچ بیر خارجی سئروئر یولو یوخدور؛ بونا گؤره یاددان چیخان رمزی بیزیم طرفیمیزدن برگردانماق ممکن دئییل و پین‌کدو یا الگونو یاددا ساخلاماق مسئولیتی و اونو یاددان چیخارماغین هر جور نتیجه‌سی تماماً کاربرین اؤز بؤینونادیر.",
@@ -1554,7 +1615,7 @@ jobs:
                   repTargetAppLabel = "برنامه هدف:",
                   repTimeLabel = "زمان:",
                   repMethodLabel = "روش:",
-                  repAutoClearNote = "نکته: ای گزارش‌یا بعد د خوندن و در اومئن د ای تب خودکار پاک میبون تا جمع نبون.",
+                  repAutoClearNote = "گزارش‌یا امنیتی تا وقتی دکمه زیر نه نزنیت پاک نمیبون و وا آلشت زون برنامه ترجمه میبون.",
                   repClearNowBtn = "✓ خوندم و پاک کردن گزارش",
                   statusNoPassword = "⚠ بی رمز",
                   statusNeedsPerm = "⚠ مجوز میخا",
@@ -1588,7 +1649,7 @@ jobs:
                   delay4m = "۴ دقیقه",
                   delay6m = "۶ دقیقه",
                   delay10m = "۱۰ دقیقه",
-                  secIconTitle = "آلشت آیکون، قایم کردن کامل و شورتکات کنترل‌سنتر",
+                  secIconTitle = "آلشت آیکون برنامه",
                   iconPadlock = "قفل زرد",
                   iconCalculator = "ماشین‌حساب",
                   iconHidden = "قایم کردن د لیست برنامیا",
@@ -1609,6 +1670,17 @@ jobs:
                   themeSystem = "سیستم",
                   themeLight = "روشن",
                   themeDark = "تاریک",
+                  themeAmoled = "AMOLED (سیاه)",
+                  evWrongPin = "پین‌کد اشتوا زئه بی",
+                  evWrongPattern = "الگوی قفل اشتوا کشیه بی",
+                  evWrongFp = "اثر کلک ناموفق بی",
+                  evDecoyUsed = "رمز فریب زئه بی (نمایش خطای ساختگی)",
+                  evLockoutTriggered = "قفل موقت بعد د ۱۰ خطا فعال بی",
+                  evUninstallAttempt = "تلاش سی ورچیدن ادمین / پاک کردن برنامه",
+                  evPermRevokedAcc = "مجوز سرویس آنی غیرفعال بی",
+                  evPermRevokedUsage = "مجوز آمار مصرف غیرفعال بی",
+                  evPermRevokedOverlay = "مجوز نمایش شناور غیرفعال بی",
+                  evPermRevokedCam = "مجوز دوربین سلفی غیرفعال بی",
                   selectLangLabel = "انتخاب زون کل برنامه:",
                   aboutSubtitle = "طراحی و مهندسی توسط حامد و هوش مصنوعی جمینای (Gemini)",
                   aboutBody = "وه NowLock خوش اومئیت. ای برنامه حاصل ساعت‌ها تلاش، مهندسی دقیق و آزمایش‌یا پشت‌سرهم توسط حامد و هوش مصنوعی جمینای (Gemini) هسه تا یه برنامه واقعاً به درد بخور و محکم سی اندروید درست بوئه. د لحاظ فنی، هیچ برنامه جانبی (Third-Party) خارج د هسته اصلی سیستم‌عامل نمیتونه ادعا بکه که همه راه‌یا و اکشن‌یا سیستمی نه صددرصد و قطعی میبنده؛ ولی ایما من NowLock وا بکار گرتن بهترین روش‌یا اندروید، یکی د کامل‌ترین، زوترین و مطمئن‌ترین نسخه‌یا ممکن من ای سبک برنامیا نه بی کم کردن سرعت گوشی و مصرف باتری سیتون ساختیمه.",
@@ -1617,7 +1689,8 @@ jobs:
                       "• زون برنامه‌نویسی Kotlin: ساخت ۱۰۰٪ بومی سی بالاترین سرعت و پایداری د اندروید.",
                       "• فریم‌ورک Jetpack Compose & Material 3: ظاهر مدرن، روان و هماهنگ وا همه صفحه‌یا.",
                       "• رمزنگاری SHA-256 و AndroidX Biometric: حفاظت سخت‌افزاری د رمز و اثر کلک.",
-                      "• زیرساخت ابری GitHub Actions & Python CI/CD: ساخت و انتشار خودکار نسخه‌یا رسمی."
+                      "• زیرساخت ابری GitHub Actions & Python CI/CD: ساخت و انتشار خودکار نسخه‌یا رسمی.",
+                      "• اصالت سورس‌کد و کتابخانه‌یا متن‌باز: کدیا NowLock صددرصد د صفر توسط حامد و جمینای نوشته بینه و د هیچ برنامه‌ای کپی نبیه؛ فقط د کتابخانه‌یا رسمی Google (Jetpack Compose, Material 3, AndroidX) و JetBrains (Kotlin) وا مجوز Apache 2.0 استفاده بیه."
                   ),
                   aboutPrivacyTitle = "حریم شخصی، امنیت اطلاعات و مسئولیت کاربر:",
                   aboutPrivacySummary = "همه رمزیا و سامونیا شما ۱۰۰٪ آفلاین فقط رو حافظه گوشی خوتون ذخیره میبو و هیچ سرور خارجی سی بازیابی رمز وجود ناره؛ هنی سی، مسئولیت ویر داشتن پین‌کد یا الگو و هر مشکل یا پیامدی که د فراموش کردنش پیش بیا، تماماً وه گردن خو کاربره.",
@@ -1706,7 +1779,7 @@ jobs:
                   repTargetAppLabel = "هدف برنامه:",
                   repTimeLabel = "زمان:",
                   repMethodLabel = "روش:",
-                  repAutoClearNote = "نکته: اینتا گزارش‌ئون بخوندستن په، تب جا بیرون بوردن موقع خودکار پاک وونّه تا جمع نَوون.",
+                  repAutoClearNote = "امنیتی گزارش‌ئون تا وقتی بنه دکمه ره نزنین پاک نونّه و برنامه زوون عوض بَیّن جا ترجمه وونّه.",
                   repClearNowBtn = "✓ بخوندستمه و گزارش پاک هاکردن",
                   statusNoPassword = "⚠ بی رمز",
                   statusNeedsPerm = "⚠ مجوز خانه",
@@ -1740,7 +1813,7 @@ jobs:
                   delay4m = "۴ دقیقه",
                   delay6m = "۶ دقیقه",
                   delay10m = "۱۰ دقیقه",
-                  secIconTitle = "آیکون عوض هاکردن، کامل مخفی هاکردن و کنترل‌سنتر شورتکات",
+                  secIconTitle = "برنامه آیکون عوض هاکردن",
                   iconPadlock = "زرد قفل",
                   iconCalculator = "ماشین‌حساب",
                   iconHidden = "برنامه‌ئون لیست جا مخفی هاکردن",
@@ -1761,6 +1834,17 @@ jobs:
                   themeSystem = "سیستم",
                   themeLight = "روشن",
                   themeDark = "تاریک",
+                  themeAmoled = "AMOLED (سیو)",
+                  evWrongPin = "اشتباه پین‌کد بزو بَیّه",
+                  evWrongPattern = "اشتباه الگو بکشی بَیّه",
+                  evWrongFp = "ناموفق انگشت اثر ثبت بَیّه",
+                  evDecoyUsed = "فریب رمز بزو بَیّه (ساختگی خطا سراق هادا بَیّه)",
+                  evLockoutTriggered = "۱۰ تا اشتباه په موقت قفل فعال بَیّه",
+                  evUninstallAttempt = "ادمین مجوز بیتن / برنامه پاک هاکردن تلاش",
+                  evPermRevokedAcc = "آنی سرویس مجوز غیرفعال بَیّه",
+                  evPermRevokedUsage = "مصرف آمار مجوز غیرفعال بَیّه",
+                  evPermRevokedOverlay = "شناور هارشا مجوز غیرفعال بَیّه",
+                  evPermRevokedCam = "سلفی دوربین مجوز غیرفعال بَیّه",
                   selectLangLabel = "کل برنامه زوون ره انتخاب هاکنین:",
                   aboutSubtitle = "طراحی و مهندسی حامد و جمینای (Gemini) هوش مصنوعی جا",
                   aboutBody = "NowLock ره خوش بمونی. اینتا برنامه ساعت‌ها تلاش، دقیق مهندسی و پشت‌سرهم تست هاکردن حامد و جمینای (Gemini) هوش مصنوعی جا بساته بَیّه تا اَتا واقعاً بدردبخور و محکم برنامه اندروید وسّه بوئه. فنی نظر جا، هیچ جانبی برنامه‌ای (Third-Party) که سیستم‌عامل اصلی هسته جا بیرون دره نتونده ادعا هاکنه همه سیستمی اکشن‌ئون و راه‌ئون ره صددرصد و قطعی بندنه؛ ولی اِما NowLock دله اندروید بهترین روش‌ئون ره جمع هاکردمی تا اینتا سبک برنامه‌ئون میون، اَتا از بهترین، سریع‌ترین و مطمئن‌ترین نسخه‌ئون ره بی سرعت افت یا باتری مصرف شما ره هادیم.",
@@ -1769,7 +1853,8 @@ jobs:
                       "• Kotlin برنامه‌نویسی زوون: ۱۰۰٪ بومی (Native) بالاترین سرعت و پایداری وسّه اندروید دله.",
                       "• Jetpack Compose & Material 3: مدرن، روان و همه صفحه‌ئون جا سازگار رابط کاربری.",
                       "• SHA-256 رمزنگاری و AndroidX Biometric: رمز و انگشت اثر سخت‌افزاری حفاظت.",
-                      "• GitHub Actions & Python CI/CD: خودکار بساتن و تنک هاکردن رسمی نسخه‌ئون."
+                      "• GitHub Actions & Python CI/CD: خودکار بساتن و تنک هاکردن رسمی نسخه‌ئون.",
+                      "• سورس‌کد اصالت و متن‌باز کتابخانه‌ئون: NowLock سورس‌کد ۱۰۰٪ صفر جا حامد و جمینای دست بنویشته بَیّه و هیچ برنامه‌ای جا کپی نَیّه؛ ونه دله فقط Google (Jetpack Compose, Material 3, AndroidX) و JetBrains (Kotlin) رسمی کتابخانه‌ئون جا Apache 2.0 مجوز بن استفاده بَیّه."
                   ),
                   aboutPrivacyTitle = "شخصی حریم، اطلاعات امنیت و کاربر مسئولیت:",
                   aboutPrivacySummary = "شمه همه رمزها و تنظیمات ۱۰۰٪ آفلاین فقط شمه گوشی حافظه دله موندنه و هیچ خارجی سروری رمز ورگردوندن وسّه دنی‌یه؛ همینتا وسّه، پین‌کد یا الگو ره یاد داشتن مسئولیت و هر مشکلی که ونه یاد بکردن جا پیش بئه، کاملاً خودِ کاربر گردن دره.",
@@ -2084,18 +2169,19 @@ jobs:
                   )
                   animPhase + randomSeedOffset
               }
-              // Opaque frosted glass base (no underlying app text/content is visible, zero white top/bottom border)
-              val baseBg = if (isDark) {
-                  lerp(Color(0xFF070A12), c1, 0.34f)
-              } else {
-                  lerp(Color(0xFF1A2433), c1, 0.62f)
+              val isAmoled = AppRepo.isAmoledEffective()
+              val baseBg = when {
+                  isAmoled -> Color(0xFF000000)
+                  isDark -> lerp(Color(0xFF070A12), c1, 0.34f)
+                  else -> lerp(Color(0xFF1A2433), c1, 0.62f)
               }
               Box(
                   modifier = modifier
                       .fillMaxSize()
                       .background(baseBg)
               ) {
-                  ComposeCanvas(modifier = Modifier.fillMaxSize()) {
+                  if (!isAmoled) {
+                      ComposeCanvas(modifier = Modifier.fillMaxSize()) {
                       val w = size.width
                       val h = size.height
                       val maxDim = maxOf(w, h).coerceAtLeast(1f)
@@ -2177,6 +2263,7 @@ jobs:
                       drawRect(
                           color = if (isDark) Color(0x24050811) else Color(0x18101824)
                       )
+                      }
                   }
                   content()
               }
@@ -2187,7 +2274,12 @@ jobs:
               modifier: Modifier = Modifier,
               content: @Composable BoxScope.() -> Unit
           ) {
-              val baseGradient = if (isDark) {
+              val isAmoled = AppRepo.isAmoledEffective()
+              val baseGradient = if (isAmoled) {
+                  Brush.verticalGradient(
+                      colors = listOf(Color(0xFF000000), Color(0xFF000000))
+                  )
+              } else if (isDark) {
                   Brush.verticalGradient(
                       colors = listOf(
                           Color(0xFF1C1B5F),
@@ -2598,6 +2690,7 @@ jobs:
                       recordIntruderAttempt(ctx, targetPkg)
                   }
                   if (fails >= 10) {
+                      appendSecurityLog(ctx, targetPkg, "LOCKOUT_TRIGGERED")
                       val penaltySec = 15 + (fails - 10) * 5
                       val untilMs = System.currentTimeMillis() + (penaltySec * 1000L)
                       prefs.edit().putLong(KEY_LOCKOUT_UNTIL_MS, untilMs).commit()
@@ -3072,9 +3165,10 @@ jobs:
               fun getAppLang(): AppLang =
                   runCatching { AppLang.valueOf(prefs.getString(KEY_APP_LANG, AppLang.EN.name) ?: AppLang.EN.name) }.getOrDefault(AppLang.EN)
               fun setAppLang(lang: AppLang) = prefs.edit().putString(KEY_APP_LANG, lang.name).commit()
+              fun isAmoledEffective(): Boolean = getThemeMode() == ThemeMode.AMOLED
               fun isDarkEffective(ctx: Context): Boolean {
                   return when (getThemeMode()) {
-                      ThemeMode.DARK -> true
+                      ThemeMode.DARK, ThemeMode.AMOLED -> true
                       ThemeMode.LIGHT -> false
                       ThemeMode.SYSTEM -> {
                           val nightFlags = ctx.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
@@ -3422,7 +3516,18 @@ jobs:
           }
           class UninstallProtectionReceiver : DeviceAdminReceiver() {
               override fun onDisableRequested(context: Context, intent: Intent): CharSequence {
+                  runCatching {
+                      AppRepo.init(context)
+                      AppRepo.appendSecurityLog(context, context.packageName, "UNINSTALL_ATTEMPT")
+                  }
                   return "NowLock: غیرفعال کردن این گزینه باعث حذف محافظ برنامه می‌شود."
+              }
+              override fun onDisabled(context: Context, intent: Intent) {
+                  super.onDisabled(context, intent)
+                  runCatching {
+                      AppRepo.init(context)
+                      AppRepo.appendSecurityLog(context, context.packageName, "UNINSTALL_ATTEMPT")
+                  }
               }
           }
           // Full-Screen Lock Activity (Clean Top Header: ONLY Small Padlock + RGB "NowLock", Intruder Selfie on Failed Fingerprint Too)
@@ -3463,9 +3568,10 @@ jobs:
                       val s = getStrings(lang)
                       val themeMode = AppRepo.getThemeMode()
                       val sysDark = isSystemInDarkTheme()
+                      val isAmoled = themeMode == ThemeMode.AMOLED
                       val isDark = when (themeMode) {
                           ThemeMode.SYSTEM -> sysDark
-                          ThemeMode.DARK -> true
+                          ThemeMode.DARK, ThemeMode.AMOLED -> true
                           ThemeMode.LIGHT -> false
                       }
                       SideEffect {
@@ -3601,6 +3707,7 @@ jobs:
                                   } else if (isCorrect) {
                                       onSuccessfulUnlock()
                                   } else if (isDecoy) {
+                                      AppRepo.appendSecurityLog(this@LockScreenActivity, targetPkg, "DECOY_USED")
                                       resetPatternCallback()
                                       isShowingFakeCrash = true
                                   } else {
@@ -3639,6 +3746,7 @@ jobs:
                                           } else if (isCorrect) {
                                               onSuccessfulUnlock()
                                           } else if (isDecoy) {
+                                              AppRepo.appendSecurityLog(this@LockScreenActivity, targetPkg, "DECOY_USED")
                                               enteredPin = ""
                                               isShowingFakeCrash = true
                                           } else {
@@ -4050,13 +4158,71 @@ jobs:
                               .widthIn(max = 460.dp)
                               .fillMaxSize()
                               .padding(horizontal = 24.dp, vertical = if (metrics.isCompactHeight) 10.dp else 22.dp),
-                          horizontalAlignment = Alignment.CenterHorizontally,
-                          verticalArrangement = Arrangement.SpaceBetween
+                          horizontalAlignment = Alignment.CenterHorizontally
                       ) {
-                          Box(modifier = Modifier.padding(top = if (metrics.isCompactHeight) 12.dp else 28.dp)) {
-                              HeaderAndPinDotsSection()
+                          if (!usePattern) {
+                              // PIN Mode: Prompt + 4 PIN Dots at the top, and Padlock + "NowLock" positioned in the lower-middle space closer to the Number Pad!
+                              Spacer(Modifier.height(if (metrics.isCompactHeight) 18.dp else 36.dp))
+                              Text(
+                                  text = statusMessage,
+                                  color = if (isErrorState) Color(0xFFEF4444) else secondaryTextColor,
+                                  fontSize = 13.5.sp,
+                                  textAlign = TextAlign.Center,
+                                  modifier = Modifier.padding(horizontal = 12.dp)
+                              )
+                              Spacer(Modifier.height(if (metrics.isUltraShortHeight) 14.dp else 22.dp))
+                              CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                                  Row(
+                                      horizontalArrangement = Arrangement.spacedBy(18.dp),
+                                      verticalAlignment = Alignment.CenterVertically
+                                  ) {
+                                      repeat(4) { idx ->
+                                          val filled = idx < enteredPinLength
+                                          val dotScale by animateFloatAsState(
+                                              targetValue = if (filled) 1.18f else 1.0f,
+                                              animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
+                                              label = "dotScale"
+                                          )
+                                          Box(
+                                              modifier = Modifier
+                                                  .size(14.dp)
+                                                  .scale(dotScale)
+                                                  .clip(CircleShape)
+                                                  .background(
+                                                      when {
+                                                          isErrorState -> Color(0xFFEF4444)
+                                                          filled -> primaryTextColor
+                                                          else -> Color.Transparent
+                                                      }
+                                                  )
+                                                  .border(
+                                                      width = 1.5.dp,
+                                                      color = if (isErrorState) Color(0xFFEF4444) else primaryTextColor.copy(alpha = 0.55f),
+                                                      shape = CircleShape
+                                                  )
+                                          )
+                                      }
+                                  }
+                              }
+                              Spacer(Modifier.weight(1.25f))
+                              BrandBadgeRow()
+                              Spacer(Modifier.weight(0.75f))
+                              InputPadSection()
+                          } else {
+                              // Pattern Mode: Centered in the middle space above the Pattern grid
+                              Spacer(Modifier.weight(1.1f))
+                              BrandBadgeRow()
+                              Spacer(Modifier.height(14.dp))
+                              Text(
+                                  text = statusMessage,
+                                  color = if (isErrorState) Color(0xFFEF4444) else secondaryTextColor,
+                                  fontSize = 13.5.sp,
+                                  textAlign = TextAlign.Center,
+                                  modifier = Modifier.padding(horizontal = 12.dp)
+                              )
+                              Spacer(Modifier.weight(0.9f))
+                              InputPadSection()
                           }
-                          InputPadSection()
                       }
                   }
               }
@@ -4515,17 +4681,48 @@ jobs:
                               val cx = size.width / 2f
                               val cy = size.height / 2f
                               val baseR = size.minDimension * 0.32f
-                              // Expanding animated pulse wave
-                              drawCircle(
-                                  color = animatedColor.copy(alpha = (1f - pulseProgress) * 0.34f),
-                                  radius = baseR * (1f + pulseProgress * 0.65f),
-                                  center = Offset(cx, cy)
-                              )
-                              drawCircle(
-                                  color = animatedColor.copy(alpha = 0.18f),
-                                  radius = baseR * 1.18f,
-                                  center = Offset(cx, cy)
-                              )
+                              if (shapeMorph > 0.45f) {
+                                  // Expanding Triangular Pulse Waves matching the Red Danger Triangle geometry!
+                                  val waveScale1 = 1f + pulseProgress * 0.62f
+                                  val rW1 = baseR * waveScale1
+                                  val waveTriPath1 = Path().apply {
+                                      moveTo(cx, cy - rW1 * 0.95f)
+                                      lineTo(cx + rW1 * 0.92f, cy + rW1 * 0.78f)
+                                      lineTo(cx - rW1 * 0.92f, cy + rW1 * 0.78f)
+                                      close()
+                                  }
+                                  drawPath(
+                                      path = waveTriPath1,
+                                      color = animatedColor.copy(alpha = (1f - pulseProgress) * 0.42f),
+                                      style = androidx.compose.ui.graphics.drawscope.Stroke(
+                                          width = 2.8.dp.toPx(),
+                                          cap = StrokeCap.Round
+                                      )
+                                  )
+                                  val rW2 = baseR * 1.22f
+                                  val waveTriPath2 = Path().apply {
+                                      moveTo(cx, cy - rW2 * 0.95f)
+                                      lineTo(cx + rW2 * 0.92f, cy + rW2 * 0.78f)
+                                      lineTo(cx - rW2 * 0.92f, cy + rW2 * 0.78f)
+                                      close()
+                                  }
+                                  drawPath(
+                                      path = waveTriPath2,
+                                      color = animatedColor.copy(alpha = 0.16f)
+                                  )
+                              } else {
+                                  // Expanding Circular Pulse Waves for Yellow Warning / Emerald Safe Circle!
+                                  drawCircle(
+                                      color = animatedColor.copy(alpha = (1f - pulseProgress) * 0.34f),
+                                      radius = baseR * (1f + pulseProgress * 0.65f),
+                                      center = Offset(cx, cy)
+                                  )
+                                  drawCircle(
+                                      color = animatedColor.copy(alpha = 0.18f),
+                                      radius = baseR * 1.18f,
+                                      center = Offset(cx, cy)
+                                  )
+                              }
                               if (shapeMorph > 0.45f) {
                                   // Dynamic Red Danger Hazard Triangle with rounded stroke + inner fill
                                   val triPath = Path().apply {
@@ -4762,9 +4959,9 @@ jobs:
                           }
                       }
                       val isEngineReady = hasAccPerm && hasUsagePerm && hasOverlayPerm && hasCamPerm
-                      val topHeaderBg = if (isDark) Color(0xCC1C1B5A) else Color(0xE6F0F2FA)
-                      val card = if (isDark) Color(0xCC282664) else Color(0xF0FFFFFF)
-                      val border = if (isDark) Color(0x18FFFFFF) else Color(0x125D56F5)
+                      val topHeaderBg = if (isAmoled) Color(0xFF000000) else if (isDark) Color(0xCC1C1B5A) else Color(0xE6F0F2FA)
+                      val card = if (isAmoled) Color(0xFF0B0B10) else if (isDark) Color(0xCC282664) else Color(0xF0FFFFFF)
+                      val border = if (isAmoled) Color(0x26FFFFFF) else if (isDark) Color(0x18FFFFFF) else Color(0x125D56F5)
                       val blue = if (isDark) Color(0xFF6C63FF) else Color(0xFF5D56F5)
                       val txt = if (isDark) Color(0xFFF5F6FA) else Color(0xFF1F2232)
                       val sub = if (isDark) Color(0xFFA7A4D6) else Color(0xFF757992)
@@ -4801,6 +4998,21 @@ jobs:
                       var securityLogs by remember { mutableStateOf(AppRepo.getSecurityLogs()) }
                       var showUpdateSubtitle by remember { mutableStateOf(false) }
                       // Refresh security logs whenever switching to the Security Report tab, and auto-clear from storage once read upon leaving the tab!
+                      var prevAcc by remember { mutableStateOf(hasAccPerm) }
+                      var prevUsage by remember { mutableStateOf(hasUsagePerm) }
+                      var prevOverlay by remember { mutableStateOf(hasOverlayPerm) }
+                      var prevCam by remember { mutableStateOf(hasCamPerm) }
+                      LaunchedEffect(hasAccPerm, hasUsagePerm, hasOverlayPerm, hasCamPerm) {
+                          if (prevAcc && !hasAccPerm) AppRepo.appendSecurityLog(this@MainActivity, packageName, "PERM_REVOKED_ACC")
+                          if (prevUsage && !hasUsagePerm) AppRepo.appendSecurityLog(this@MainActivity, packageName, "PERM_REVOKED_USAGE")
+                          if (prevOverlay && !hasOverlayPerm) AppRepo.appendSecurityLog(this@MainActivity, packageName, "PERM_REVOKED_OVERLAY")
+                          if (prevCam && !hasCamPerm) AppRepo.appendSecurityLog(this@MainActivity, packageName, "PERM_REVOKED_CAM")
+                          prevAcc = hasAccPerm
+                          prevUsage = hasUsagePerm
+                          prevOverlay = hasOverlayPerm
+                          prevCam = hasCamPerm
+                          securityLogs = AppRepo.getSecurityLogs()
+                      }
                       LaunchedEffect(pagerState.currentPage) {
                           if (NowLockNavTab.entries[pagerState.currentPage] == NowLockNavTab.REPORT) {
                               securityLogs = AppRepo.getSecurityLogs()
@@ -5419,10 +5631,9 @@ jobs:
                                                           ) {
                                                               Row(
                                                                   modifier = Modifier.fillMaxWidth(),
-                                                                  horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                                                  horizontalArrangement = Arrangement.spacedBy(10.dp),
                                                                   verticalAlignment = Alignment.CenterVertically
                                                               ) {
-                                                                  // Card 1 & Card 2: Padlock vs Calculator Icon Style
                                                                   listOf(
                                                                       Triple(AppIconMode.PADLOCK, R.drawable.ic_nowlock_logo, s.iconPadlock),
                                                                       Triple(AppIconMode.CALCULATOR, R.drawable.ic_nowlock_calculator, s.iconCalculator)
@@ -5434,110 +5645,33 @@ jobs:
                                                                           border = BorderStroke(if (sel) 1.5.dp else 1.dp, if (sel) blue else border),
                                                                           modifier = Modifier
                                                                               .weight(1f)
-                                                                              .height(82.dp)
+                                                                              .height(58.dp)
                                                                               .clickable {
                                                                                   iconMode = modeItem
                                                                                   AppRepo.setIconMode(this@MainActivity, modeItem)
                                                                                   Toast.makeText(this@MainActivity, "${s.iconChangedToast}: $titleStr", Toast.LENGTH_SHORT).show()
                                                                               }
                                                                       ) {
-                                                                          Column(
-                                                                              modifier = Modifier.fillMaxSize().padding(horizontal = 6.dp, vertical = 8.dp),
-                                                                              horizontalAlignment = Alignment.CenterHorizontally,
-                                                                              verticalArrangement = Arrangement.Center
+                                                                          Row(
+                                                                              modifier = Modifier.fillMaxSize().padding(horizontal = 10.dp),
+                                                                              horizontalArrangement = Arrangement.Center,
+                                                                              verticalAlignment = Alignment.CenterVertically
                                                                           ) {
                                                                               Image(
                                                                                   painter = painterResource(id = resId),
                                                                                   contentDescription = titleStr,
-                                                                                  modifier = Modifier.size(30.dp).clip(RoundedCornerShape(8.dp))
+                                                                                  modifier = Modifier.size(32.dp).clip(RoundedCornerShape(8.dp))
                                                                               )
-                                                                              Spacer(Modifier.height(6.dp))
+                                                                              Spacer(Modifier.width(8.dp))
                                                                               Text(
                                                                                   titleStr,
                                                                                   color = txt,
-                                                                                  fontSize = 11.sp,
-                                                                                  fontWeight = FontWeight.SemiBold,
-                                                                                  textAlign = TextAlign.Center,
-                                                                                  maxLines = 1
+                                                                                  fontSize = 12.sp,
+                                                                                  fontWeight = FontWeight.SemiBold
                                                                               )
                                                                           }
                                                                       }
                                                                   }
-                                                                  // Card 3: Independent ON/OFF Toggle for Hiding App Icon from Launcher (No icon inside card; text pulled up to align with the other two cards!)
-                                                                  Surface(
-                                                                      shape = RoundedCornerShape(14.dp),
-                                                                      color = if (isLauncherHidden) Color(0x2210B981) else Color.Transparent,
-                                                                      border = BorderStroke(
-                                                                          if (isLauncherHidden) 1.5.dp else 1.dp,
-                                                                          if (isLauncherHidden) Color(0xFF10B981) else border
-                                                                      ),
-                                                                      modifier = Modifier
-                                                                          .weight(1f)
-                                                                          .height(82.dp)
-                                                                          .clickable {
-                                                                              val nextHidden = !isLauncherHidden
-                                                                              isLauncherHidden = nextHidden
-                                                                              AppRepo.setLauncherHidden(this@MainActivity, nextHidden)
-                                                                              Toast.makeText(
-                                                                                  this@MainActivity,
-                                                                                  "${s.iconHidden}: ${if (nextHidden) s.activeLabel else s.inactiveLabel}",
-                                                                                  Toast.LENGTH_SHORT
-                                                                              ).show()
-                                                                          }
-                                                                  ) {
-                                                                      Column(
-                                                                          modifier = Modifier
-                                                                              .fillMaxSize()
-                                                                              .padding(horizontal = 6.dp, vertical = 8.dp),
-                                                                          horizontalAlignment = Alignment.CenterHorizontally,
-                                                                          verticalArrangement = Arrangement.SpaceBetween
-                                                                      ) {
-                                                                          Text(
-                                                                              text = s.iconHidden,
-                                                                              color = txt,
-                                                                              fontSize = 10.5.sp,
-                                                                              fontWeight = FontWeight.Bold,
-                                                                              textAlign = TextAlign.Center,
-                                                                              lineHeight = 13.5.sp,
-                                                                              maxLines = 2
-                                                                          )
-                                                                          Surface(
-                                                                              shape = RoundedCornerShape(50),
-                                                                              color = if (isLauncherHidden) Color(0xFF10B981) else border
-                                                                          ) {
-                                                                              Text(
-                                                                                  text = if (isLauncherHidden) s.activeLabel else s.inactiveLabel,
-                                                                                  color = if (isLauncherHidden) Color.White else sub,
-                                                                                  fontSize = 10.sp,
-                                                                                  fontWeight = FontWeight.Bold,
-                                                                                  modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp)
-                                                                              )
-                                                                          }
-                                                                      }
-                                                                  }
-                                                              }
-                                                              Spacer(Modifier.height(10.dp))
-                                                              Text(
-                                                                  text = s.iconHiddenHint,
-                                                                  color = sub,
-                                                                  fontSize = 11.sp,
-                                                                  lineHeight = 16.sp
-                                                              )
-                                                              Spacer(Modifier.height(10.dp))
-                                                              Button(
-                                                                  onClick = {
-                                                                      requestAddControlCenterTile(this@MainActivity, s.controlCenterTileToast)
-                                                                  },
-                                                                  modifier = Modifier.fillMaxWidth(),
-                                                                  shape = RoundedCornerShape(12.dp),
-                                                                  colors = ButtonDefaults.buttonColors(containerColor = blue)
-                                                              ) {
-                                                                  Text(
-                                                                      text = "⚡ ${s.btnAddControlCenterTile}",
-                                                                      color = Color.White,
-                                                                      fontSize = 12.sp,
-                                                                      fontWeight = FontWeight.SemiBold
-                                                                  )
                                                               }
                                                           }
                                                       }
@@ -5626,7 +5760,8 @@ jobs:
                                                                   listOf(
                                                                       ThemeMode.SYSTEM to s.themeSystem,
                                                                       ThemeMode.LIGHT to s.themeLight,
-                                                                      ThemeMode.DARK to s.themeDark
+                                                                      ThemeMode.DARK to s.themeDark,
+                                                                      ThemeMode.AMOLED to s.themeAmoled
                                                                   ).forEach { (m, label) ->
                                                                       val sel = themeMode == m
                                                                       Surface(
@@ -5686,14 +5821,6 @@ jobs:
                                                   }
                                               }
                                               NowLockNavTab.REPORT -> {
-                                                  // Auto-clear read security logs once the user has viewed the Security Report tab and switches away!
-                                                  DisposableEffect(Unit) {
-                                                      onDispose {
-                                                          if (securityLogs.isNotEmpty()) {
-                                                              AppRepo.clearSecurityLogs()
-                                                          }
-                                                      }
-                                                  }
                                                   val isDangerRed = !isEngineReady || !passwordSetState
                                                   val isWarningYellow = !isDangerRed && (securityLogs.isNotEmpty() || AppRepo.getConsecutiveFailedAttempts() > 0)
                                                   val topEmblemTitle = when {
@@ -5711,7 +5838,7 @@ jobs:
                                                       verticalArrangement = Arrangement.spacedBy(12.dp),
                                                       contentPadding = PaddingValues(top = 14.dp, bottom = navBarBottomInset + 36.dp)
                                                   ) {
-                                                      // 1. Animated Top Security Emblem (Red Danger <-> Yellow Exclamation <-> Emerald Safe)
+                                                      // 1. Animated Top Security Emblem (Red Triangle Pulse <-> Yellow Circle Exclamation <-> Emerald Safe)
                                                       item {
                                                           AnimatedSecurityReportEmblem(
                                                               isDangerRed = isDangerRed,
@@ -5724,7 +5851,7 @@ jobs:
                                                               subColor = sub
                                                           )
                                                       }
-                                                      // 2. Open 4-Permission Active Guard Section (Moved here from Apps tab, always open and visible!)
+                                                      // 2. Open 4-Permission Active Guard Section
                                                       item {
                                                           val grantedCount = listOf(hasAccPerm, hasUsagePerm, hasOverlayPerm, hasCamPerm).count { it }
                                                           MinimalSectionCard(
@@ -5807,45 +5934,7 @@ jobs:
                                                               }
                                                           }
                                                       }
-                                                      // 3. Live Diagnostics Card (Are permissions disabled? Is the lock service stopped?)
-                                                      item {
-                                                          MinimalSectionCard(
-                                                              title = s.repAuditTitle,
-                                                              cardColor = card,
-                                                              borderColor = border,
-                                                              txtColor = txt
-                                                          ) {
-                                                              Row(
-                                                                  modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
-                                                                  horizontalArrangement = Arrangement.SpaceBetween,
-                                                                  verticalAlignment = Alignment.CenterVertically
-                                                              ) {
-                                                                  Text(s.repQPermsDisabled, color = txt, fontSize = 12.sp, modifier = Modifier.weight(1f))
-                                                                  Text(
-                                                                      text = if (isEngineReady) s.repAnsNoAllActive else s.repAnsYesDisabled,
-                                                                      color = if (isEngineReady) Color(0xFF10B981) else Color(0xFFEF4444),
-                                                                      fontSize = 11.5.sp,
-                                                                      fontWeight = FontWeight.Bold
-                                                                  )
-                                                              }
-                                                              HorizontalDivider(color = border)
-                                                              Row(
-                                                                  modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
-                                                                  horizontalArrangement = Arrangement.SpaceBetween,
-                                                                  verticalAlignment = Alignment.CenterVertically
-                                                              ) {
-                                                                  Text(s.repQServiceStopped, color = txt, fontSize = 12.sp, modifier = Modifier.weight(1f))
-                                                                  val serviceRunning = hasAccPerm || hasUsagePerm
-                                                                  Text(
-                                                                      text = if (serviceRunning) s.repAnsNoRunning else s.repAnsYesStopped,
-                                                                      color = if (serviceRunning) Color(0xFF10B981) else Color(0xFFEF4444),
-                                                                      fontSize = 11.5.sp,
-                                                                      fontWeight = FontWeight.Bold
-                                                                  )
-                                                              }
-                                                          }
-                                                      }
-                                                      // 4. Smart Failed Unlock Attempts Report (Count, When Occurred, Target App, Auto-Cleared once read)
+                                                      // 3. Unified Smart Security Report (Wrong PIN/Pattern/FP, Decoy Triggered, Permission Revoked, Uninstall Attempt; Persists until Clear button is tapped & dynamically translates!)
                                                       item {
                                                           MinimalSectionCard(
                                                               title = s.repLogsTitle,
@@ -5883,13 +5972,21 @@ jobs:
                                                               } else {
                                                                   Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                                                       securityLogs.forEach { entry ->
+                                                                          val isCriticalEvent = entry.method.startsWith("PERM_") || entry.method == "UNINSTALL_ATTEMPT" || entry.method == "LOCKOUT_TRIGGERED"
+                                                                          val badgeColor = if (isCriticalEvent) Color(0xFFEF4444) else Color(0xFFF59E0B)
                                                                           Surface(
                                                                               shape = RoundedCornerShape(12.dp),
-                                                                              color = Color(0x18F59E0B),
-                                                                              border = BorderStroke(1.dp, Color(0x44F59E0B)),
+                                                                              color = badgeColor.copy(alpha = 0.11f),
+                                                                              border = BorderStroke(1.dp, badgeColor.copy(alpha = 0.35f)),
                                                                               modifier = Modifier.fillMaxWidth()
                                                                           ) {
                                                                               Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                                                  Text(
+                                                                                      text = s.translateSecurityEvent(entry.method),
+                                                                                      color = badgeColor,
+                                                                                      fontSize = 12.sp,
+                                                                                      fontWeight = FontWeight.Bold
+                                                                                  )
                                                                                   Row(
                                                                                       modifier = Modifier.fillMaxWidth(),
                                                                                       horizontalArrangement = Arrangement.SpaceBetween
@@ -5897,21 +5994,15 @@ jobs:
                                                                                       Text(
                                                                                           text = "${s.repTargetAppLabel} ${entry.targetAppLabel}",
                                                                                           color = txt,
-                                                                                          fontSize = 12.sp,
-                                                                                          fontWeight = FontWeight.Bold
-                                                                                      )
-                                                                                      Text(
-                                                                                          text = "${s.repMethodLabel} ${entry.method}",
-                                                                                          color = Color(0xFFF59E0B),
-                                                                                          fontSize = 11.sp,
+                                                                                          fontSize = 11.5.sp,
                                                                                           fontWeight = FontWeight.SemiBold
                                                                                       )
+                                                                                      Text(
+                                                                                          text = entry.timestamp,
+                                                                                          color = sub,
+                                                                                          fontSize = 10.5.sp
+                                                                                      )
                                                                                   }
-                                                                                  Text(
-                                                                                      text = "${s.repTimeLabel} ${entry.timestamp}",
-                                                                                      color = sub,
-                                                                                      fontSize = 11.sp
-                                                                                  )
                                                                               }
                                                                           }
                                                                       }
@@ -5966,7 +6057,7 @@ jobs:
                                                                   )
                                                                   Spacer(Modifier.height(12.dp))
                                                                   AnimatedRgbBrandText(
-                                                                      text = "NowLock v9.0",
+                                                                      text = "NowLock v9.0.1",
                                                                       fontSize = 25.sp
                                                                   )
                                                                   Text(
@@ -6239,6 +6330,7 @@ jobs:
                                                   } else if (isCorrect) {
                                                       onSelfUnlockSuccess()
                                                   } else if (isDecoy) {
+                                                      AppRepo.appendSecurityLog(this@MainActivity, packageName, "DECOY_USED")
                                                       resetPatternCallback()
                                                       selfShowingFakeCrash = true
                                                   } else {
@@ -6277,6 +6369,7 @@ jobs:
                                                           } else if (isCorrect) {
                                                               onSelfUnlockSuccess()
                                                           } else if (isDecoy) {
+                                                              AppRepo.appendSecurityLog(this@MainActivity, packageName, "DECOY_USED")
                                                               selfEnteredPin = ""
                                                               selfShowingFakeCrash = true
                                                           } else {
@@ -6330,11 +6423,6 @@ jobs:
                                           )
                                       }
                                   }
-                                  // Translucent Glassy Top Status Bar & Bottom Navigation Bar Overlays (ONLY active in NowLock main UI, NOT on Lock Screen!)
-                                  if (!isSelfLocked) {
-                                      NotchTranslucentStatusBarOverlay(isDark = isDark)
-                                      GlassyNavigationBarOverlay(isDark = isDark, modifier = Modifier.align(Alignment.BottomCenter))
-                                  }
                                   if (showPrivacyFullModal) {
                                       PrivacyPolicyFullModal(
                                           s = s,
@@ -6345,6 +6433,11 @@ jobs:
                                           accentBlue = blue,
                                           onDismiss = { showPrivacyFullModal = false }
                                       )
+                                  }
+                                  // Translucent Glassy Top Status Bar & Bottom Navigation Bar Overlays (ONLY active in NowLock main UI, NOT on Lock Screen!)
+                                  if (!isSelfLocked) {
+                                      NotchTranslucentStatusBarOverlay(isDark = isDark)
+                                      GlassyNavigationBarOverlay(isDark = isDark, modifier = Modifier.align(Alignment.BottomCenter))
                                   }
                                   if (showPinDialog) {
                                       PinSetupDialog(
@@ -6481,16 +6574,25 @@ jobs:
               accentBlue: Color,
               onDismiss: () -> Unit
           ) {
-              Dialog(
-                  onDismissRequest = onDismiss,
-                  properties = DialogProperties(usePlatformDefaultWidth = false)
+              val isAmoled = AppRepo.isAmoledEffective()
+              BackHandler(onBack = onDismiss)
+              Box(
+                  modifier = Modifier
+                      .fillMaxSize()
+                      .background(Color(0x99000000))
+                      .pointerInput(Unit) { detectTapGestures { onDismiss() } }
+                      .windowInsetsPadding(WindowInsets.systemBars.union(WindowInsets.displayCutout))
+                      .padding(horizontal = 16.dp, vertical = 14.dp),
+                  contentAlignment = Alignment.Center
               ) {
                   Surface(
                       modifier = Modifier
+                          .widthIn(max = 680.dp)
                           .fillMaxSize()
-                          .padding(horizontal = 16.dp, vertical = 28.dp),
+                          .pointerInput(Unit) { detectTapGestures {} },
                       shape = RoundedCornerShape(24.dp),
-                      color = if (isDark) Color(0xFF1F1D52) else Color(0xFFFFFFFF)
+                      color = if (isAmoled) Color(0xFF0A0A0F) else if (isDark) Color(0xFF1F1D52) else Color(0xFFFFFFFF),
+                      border = BorderStroke(1.dp, if (isDark) Color(0x28FFFFFF) else Color(0x18000000))
                   ) {
                       Column(
                           modifier = Modifier
@@ -6586,7 +6688,7 @@ jobs:
               onSavePin: (String) -> Unit
           ) {
               val context = LocalContext.current
-              val hasOldPin = remember { if (isDecoySetup) AppRepo.isPinSet() else AppRepo.isPinSet() }
+              val hasOldPin = remember { if (isDecoySetup) false else AppRepo.isPinSet() }
               // step 0 = verify old PIN, step 1 = enter new PIN, step 2 = confirm new PIN
               var step by remember { mutableStateOf(if (hasOldPin) 0 else 1) }
               var pinInput by remember { mutableStateOf("") }
@@ -6740,7 +6842,7 @@ jobs:
               onSavePattern: (String) -> Unit
           ) {
               val context = LocalContext.current
-              val hasOldPattern = remember { if (isDecoySetup) AppRepo.isPatternSet() else AppRepo.isPatternSet() }
+              val hasOldPattern = remember { if (isDecoySetup) false else AppRepo.isPatternSet() }
               var step by remember { mutableStateOf(if (hasOldPattern) 0 else 1) }
               val selectedNodes = remember { mutableStateListOf<Int>() }
               var firstNewPattern by remember { mutableStateOf("") }
@@ -6958,11 +7060,11 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release delete v9.0-nowlock --repo "${{ github.repository }}" --cleanup-tag --yes 2>/dev/null || true
-          gh release create v9.0-nowlock NowLock.apk --repo "${{ github.repository }}" --target "${{ github.sha }}" --title "NowLock v9.0 - Smart Security Report, Per-App Config, Fake Crash Decoy & Android 16 (API 36)" --notes "## What's New in NowLock v9.0
-          - **Android 16 (API Level 36) Target SDK**: Updated targetSdk to API 36 in compliance with Google Play's August 31, 2026 requirement.
-          - **Smart Security Report Tab**: Added a dedicated Security Report tab between Settings and About featuring an animated status emblem (morphing smoothly between Red Danger when permissions/services are inactive and Yellow Exclamation when failed unlock attempts occur), open permission controls, live service diagnostics, and auto-clearing failed attempt logs.
-          - **Per-App Expandable Lock Settings**: Added an expandable configuration drawer on every app row in the Apps list, defaulting to Global Settings while allowing custom per-app overrides for Lock Mode, Fingerprint, Relock Delay, Screen-Off Relock, Intruder Selfie, Vibration, and Fake Crash Decoy.
-          - **Fake Crash Decoy Mode**: Added support for a Decoy PIN and Decoy Pattern that opens a realistic Android System crash dialog displaying the locked app's real icon and name instead of unlocking the app.
-          - **True Launcher Icon Stealth Hiding**: Configured MainActivity as non-exported so disabling the launcher aliases hides the icon completely across all Android 10–16 launchers, controlled by an independent ON/OFF card."
+          gh release delete v9.0.1-nowlock --repo "${{ github.repository }}" --cleanup-tag --yes 2>/dev/null || true
+          gh release create v9.0.1-nowlock NowLock.apk --repo "${{ github.repository }}" --target "${{ github.sha }}" --title "NowLock v9.0.1 - True AMOLED Theme, Persistent Multi-Language Security Logs & Triangle Pulse Emblem" --notes "## What's New in NowLock v9.0.1
+          - **True AMOLED Pitch-Black Theme**: Added a dedicated AMOLED (#000000) theme option that applies pure black across both the main application interface and the lock screen.
+          - **Persistent & Dynamically Translated Security Logs**: Security incidents (failed PIN/Pattern/Fingerprint attempts, Decoy triggers, 10+ attempt lockouts, permission revocations, and Device Admin disable attempts) now persist until explicitly cleared by the user and translate dynamically across all 5 languages.
+          - **Triangular Pulse Waves for Danger Emblem**: Updated the Red Danger Triangle emblem animation to emit concentric triangular pulse waves matching its geometry.
+          - **Independent Decoy Credential Setup**: Setting a Decoy PIN or Decoy Pattern no longer prompts for the primary password first.
+          - **Transparent Navigation Bar in Full Privacy Modal**: Fixed the full Privacy Policy & Terms modal so the system navigation bar remains translucent and never obscures the bottom Close button."
 
