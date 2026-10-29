@@ -9,7 +9,7 @@ jobs:
   build-apk:
     runs-on: ubuntu-24.04
     steps:
-      - name: Generate NowLock v8.1 Project, Persistent Keystore & Icons
+      - name: Generate NowLock v8.2 Project, Persistent Keystore & Icons
         shell: python3 {0}
         run: |
           import os, base64
@@ -451,8 +451,8 @@ jobs:
                   minSdk = 26
                   targetSdk = 34
                   val runNum = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
-                  versionCode = 100 + runNum
-                  versionName = "8.1-NowLock"
+                  versionCode = 110 + runNum
+                  versionName = "8.2-NowLock"
               }
               signingConfigs {
                   getByName("debug") {
@@ -575,12 +575,15 @@ jobs:
                   android:label="@string/app_name"
                   android:supportsRtl="true"
                   android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
-                  <!-- Main Activity -->
+                  <!-- Main Activity (Also handles long-press on Control Center Quick Settings Tile) -->
                   <activity
                       android:name=".MainActivity"
                       android:exported="true"
                       android:configChanges="uiMode|locale|layoutDirection|orientation|screenSize|smallestScreenSize|screenLayout|density"
                       android:launchMode="singleTop">
+                      <intent-filter>
+                          <action android:name="android.service.quicksettings.action.QS_TILE_PREFERENCES" />
+                      </intent-filter>
                   </activity>
                   <!-- Default Yellow Padlock Launcher Alias -->
                   <activity-alias
@@ -672,6 +675,17 @@ jobs:
                       android:name=".NewAppLockActionReceiver"
                       android:enabled="true"
                       android:exported="false" />
+                  <!-- Control Center / Quick Settings Tile Service (Allows opening NowLock even when hidden from Launcher!) -->
+                  <service
+                      android:name=".NowLockQuickTileService"
+                      android:exported="true"
+                      android:icon="@drawable/ic_nowlock_padlock"
+                      android:label="@string/app_name"
+                      android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+                      <intent-filter>
+                          <action android:name="android.service.quicksettings.action.QS_TILE" />
+                      </intent-filter>
+                  </service>
                   <!-- Uninstall Protection Device Admin Receiver -->
                   <receiver
                       android:name=".UninstallProtectionReceiver"
@@ -693,7 +707,7 @@ jobs:
           w("app/src/main/java/io/nowlock/app/NowLockApp.kt", r'''
           package io.nowlock.app
           /*
-           * NowLock v8.1
+           * NowLock v8.2
            * Engineered by Hamed (hades.plagueis@gmail.com) & Gemini AI
            */
           import android.Manifest
@@ -706,6 +720,7 @@ jobs:
           import android.app.NotificationManager
           import android.app.PendingIntent
           import android.app.Service
+          import android.app.StatusBarManager
           import android.app.admin.DeviceAdminReceiver
           import android.app.admin.DevicePolicyManager
           import android.app.usage.UsageEvents
@@ -730,6 +745,9 @@ jobs:
           import android.graphics.SurfaceTexture
           import android.graphics.drawable.BitmapDrawable
           import android.graphics.drawable.Drawable
+          import android.graphics.drawable.Icon
+          import android.service.quicksettings.Tile
+          import android.service.quicksettings.TileService
           import android.hardware.camera2.CameraCaptureSession
           import android.hardware.camera2.CameraCharacteristics
           import android.hardware.camera2.CameraDevice
@@ -856,7 +874,9 @@ jobs:
           import java.util.concurrent.ConcurrentHashMap
           import kotlin.math.abs
           import kotlin.math.floor
+          import kotlin.math.cos
           import kotlin.math.hypot
+          import kotlin.math.sin
           const val GITHUB_RELEASES_PAGE_URL = "https://github.com/CodeGenesis98/ZeroFlash-AppLock/releases"
           const val GITHUB_SHORT_DISPLAY_LINK = "github.com/CodeGenesis98/ZeroFlash-AppLock"
           enum class ThemeMode { SYSTEM, DARK, LIGHT }
@@ -908,6 +928,10 @@ jobs:
               val secIconTitle: String,
               val iconPadlock: String,
               val iconCalculator: String,
+              val iconHidden: String,
+              val iconHiddenHint: String,
+              val btnAddControlCenterTile: String,
+              val controlCenterTileToast: String,
               val iconChangedToast: String,
               val secSecurityTitle: String,
               val recentsTitle: String,
@@ -1004,10 +1028,14 @@ jobs:
                   delay4m = "۴ دقیقه",
                   delay6m = "۶ دقیقه",
                   delay10m = "۱۰ دقیقه",
-                  secIconTitle = "تغییر و مخفی‌سازی آیکون برنامه",
+                  secIconTitle = "تغییر آیکون، مخفی‌سازی کامل و شورتکات کنترل‌سنتر",
                   iconPadlock = "قفل زرد",
                   iconCalculator = "ماشین‌حساب",
-                  iconChangedToast = "آیکون برنامه تغییر یافت",
+                  iconHidden = "مخفی در لیست برنامه‌ها",
+                  iconHiddenHint = "در حالت مخفی، آیکون برنامه از منوی گوشی پنهان شده و از طریق شورتکات «NowLock» در کنترل‌سنتر (پنل بالای صفحه) باز می‌شود.",
+                  btnAddControlCenterTile = "افزودن شورتکات NowLock به کنترل‌سنتر گوشی",
+                  controlCenterTileToast = "از بخش ویرایش (+) در کنترل‌سنتر بالای صفحه، دکمه NowLock را اضافه کنید",
+                  iconChangedToast = "وضعیت آیکون برنامه تغییر یافت",
                   secSecurityTitle = "امنیت، پس‌زمینه و عکس فضول‌گیر",
                   recentsTitle = "مخفی‌سازی در برنامه‌های پس‌زمینه (Recents)",
                   recentsSub = "نمایش صفحه محافظ با آیکون قفل در لیست برنامه‌های اخیر",
@@ -1116,10 +1144,14 @@ jobs:
                   delay4m = "4 Min",
                   delay6m = "6 Min",
                   delay10m = "10 Min",
-                  secIconTitle = "App Icon Disguise",
+                  secIconTitle = "App Icon Disguise, Stealth Hide & Control Center",
                   iconPadlock = "Padlock",
                   iconCalculator = "Calculator",
-                  iconChangedToast = "App icon updated",
+                  iconHidden = "Hide from App List",
+                  iconHiddenHint = "When hidden, NowLock disappears from the launcher and can be opened anytime via the 'NowLock' Quick Settings tile in your Control Center.",
+                  btnAddControlCenterTile = "Add NowLock Shortcut to Control Center",
+                  controlCenterTileToast = "Open your phone's Control Center / Quick Settings and tap Edit (+) to add the NowLock tile",
+                  iconChangedToast = "App icon mode updated",
                   secSecurityTitle = "Security, Recents & Intruder Guard",
                   recentsTitle = "Hide Locked Apps in Recent Apps",
                   recentsSub = "Show theme-matched padlock shield in Recent Apps switcher",
@@ -1228,10 +1260,14 @@ jobs:
                   delay4m = "۴ دقیقه",
                   delay6m = "۶ دقیقه",
                   delay10m = "۱۰ دقیقه",
-                  secIconTitle = "برنامه آیکونون دییشدیرمک و گیزلتمک",
+                  secIconTitle = "آیکونو دییشدیرمک، تام گیزلتمک و کنترل‌سنتر شورتکاتی",
                   iconPadlock = "ساری قفل",
                   iconCalculator = "ماشین‌حساب",
-                  iconChangedToast = "برنامه‌نین آیکونو دییشیلدی",
+                  iconHidden = "برنامه‌لر لیستیندن گیزلت",
+                  iconHiddenHint = "گیزلی حالتده، برنامه منودان گیزلنیر و تئلفونون کنترل‌سنترینده‌کی «NowLock» دوگمه‌سی‌نن آچیلیر.",
+                  btnAddControlCenterTile = "NowLock شورتکاتین کنترل‌سنتره اضافه ائله",
+                  controlCenterTileToast = "تئلفونون کنترل‌سنترینده ویرایش (+) بؤلمه‌سیندن NowLock دوگمه‌سین اضافه ائلیین",
+                  iconChangedToast = "برنامه آیکونون وضعیتی دییشیلدی",
                   secSecurityTitle = "امنیت، پس‌زمینه و فضول‌گیر سلفی",
                   recentsTitle = "پس‌زمینه برنامه‌لرینده گیزلتمک (Recents)",
                   recentsSub = "سون برنامه‌لر لیستینده قفل آیکونلو محافظ صفحه گؤرسنیر",
@@ -1340,10 +1376,14 @@ jobs:
                   delay4m = "۴ دقیقه",
                   delay6m = "۶ دقیقه",
                   delay10m = "۱۰ دقیقه",
-                  secIconTitle = "آلشت و قایم کردن آیکون برنامه",
+                  secIconTitle = "آلشت آیکون، قایم کردن کامل و شورتکات کنترل‌سنتر",
                   iconPadlock = "قفل زرد",
                   iconCalculator = "ماشین‌حساب",
-                  iconChangedToast = "آیکون برنامه آلشت بی",
+                  iconHidden = "قایم کردن د لیست برنامیا",
+                  iconHiddenHint = "من حالت قایم، آیکون برنامه د صفحه گوشی پاک میبو و وا دکمه «NowLock» من کنترل‌سنتر بالای گوشی واز میبو.",
+                  btnAddControlCenterTile = "اضاف کردن شورتکات NowLock وه کنترل‌سنتر",
+                  controlCenterTileToast = "من کنترل‌سنتر بالای گوشی رو دکمه ویرایش (+) بزنیت و دکمه NowLock نه اضاف بکید",
+                  iconChangedToast = "وضعیت آیکون برنامه آلشت بی",
                   secSecurityTitle = "امنیت، پس‌زمینه و عکس فضول‌گیر",
                   recentsTitle = "قایم کردن د برنامیا پس‌زمینه (Recents)",
                   recentsSub = "نشون دئن صفحه قفل د لیست برنامیا اخیر",
@@ -1452,10 +1492,14 @@ jobs:
                   delay4m = "۴ دقیقه",
                   delay6m = "۶ دقیقه",
                   delay10m = "۱۰ دقیقه",
-                  secIconTitle = "برنامه آیکون ره عوض و مخفی هاکردن",
+                  secIconTitle = "آیکون عوض هاکردن، کامل مخفی هاکردن و کنترل‌سنتر شورتکات",
                   iconPadlock = "زرد قفل",
                   iconCalculator = "ماشین‌حساب",
-                  iconChangedToast = "برنامه آیکون عوض بَیّه",
+                  iconHidden = "برنامه‌ئون لیست جا مخفی هاکردن",
+                  iconHiddenHint = "مخفی حالت دله، برنامه آیکون منو جا شونه و کنترل‌سنتر دله «NowLock» شورتکات جا وا وونه.",
+                  btnAddControlCenterTile = "NowLock شورتکات ره کنترل‌سنتر دله بی‌یشتن",
+                  controlCenterTileToast = "کنترل‌سنتر ویرایش (+) دله جا NowLock دکمه ره اضافه هاکنین",
+                  iconChangedToast = "برنامه آیکون حالت عوض بَیّه",
                   secSecurityTitle = "امنیت، پس‌زمینه و فضول‌گیر عکس",
                   recentsTitle = "پس‌زمینه برنامه‌ئون دله مخفی هاکردن (Recents)",
                   recentsSub = "قفل آیکون صفحه ره اخیر برنامه‌ئون لیست دله سراق هاده",
@@ -1535,7 +1579,8 @@ jobs:
           }
           enum class AppIconMode {
               PADLOCK,
-              CALCULATOR
+              CALCULATOR,
+              HIDDEN
           }
           enum class RelockDelayOption(val minutes: Int) {
               IMMEDIATE(0),
@@ -1705,6 +1750,145 @@ jobs:
               }
           }
           // Happ VPN Inspired Seamless Multi-Stop Ambient Background
+          // Helper to prompt adding NowLock Quick Settings Tile to the phone's Control Center (Android 13+ native prompt, with fallback toast)
+          fun requestAddControlCenterTile(context: Context, fallbackToastMsg: String) {
+              if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                  val sbm = context.getSystemService(StatusBarManager::class.java)
+                  if (sbm != null) {
+                      val comp = ComponentName(context, NowLockQuickTileService::class.java)
+                      val icon = Icon.createWithResource(context, R.drawable.ic_nowlock_padlock)
+                      runCatching {
+                          sbm.requestAddTileService(
+                              comp,
+                              "NowLock",
+                              icon,
+                              ContextCompat.getMainExecutor(context)
+                          ) { resultCode ->
+                              if (resultCode != StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ADDED) {
+                                  Toast.makeText(context, fallbackToastMsg, Toast.LENGTH_LONG).show()
+                              }
+                          }
+                          return
+                      }
+                  }
+              }
+              Toast.makeText(context, fallbackToastMsg, Toast.LENGTH_LONG).show()
+          }
+          // Xiaomi MIUI/HyperOS App Lock Inspired Frosted Matte Glass with Slow, Soft Dynamic App-Color Clouds
+          // Completely hides the underlying app's sensitive content while reflecting its blurred ambient color palette!
+          @Composable
+          fun FrostedAppColorGlassBackground(
+              targetPkg: String,
+              isDark: Boolean,
+              modifier: Modifier = Modifier,
+              content: @Composable BoxScope.() -> Unit
+          ) {
+              val context = LocalContext.current
+              val palette = remember(targetPkg) {
+                  AppRepo.getOrExtractAppColorPalette(context, targetPkg)
+              }
+              val c1 = palette[0]
+              val c2 = palette[1]
+              val c3 = palette[2]
+              val isLowEnd = AppRepo.isLowEndHardware
+              val phase = if (isLowEnd) {
+                  0.22f
+              } else {
+                  val infiniteTransition = rememberInfiniteTransition(label = "xiaomiFrostedFlow")
+                  val animPhase by infiniteTransition.animateFloat(
+                      initialValue = 0f,
+                      targetValue = 6.2831855f,
+                      animationSpec = infiniteRepeatable(
+                          animation = tween(durationMillis = 16000, easing = LinearEasing),
+                          repeatMode = RepeatMode.Restart
+                      ),
+                      label = "frostedPhase"
+                  )
+                  animPhase
+              }
+              // Opaque deep frosted base so 0% of underlying app text/content is visible, tinted by the locked app's dominant hue
+              val baseBg = if (isDark) {
+                  lerp(Color(0xFF0B1017), c1, 0.28f)
+              } else {
+                  lerp(Color(0xFF161F2C), c1, 0.36f)
+              }
+              Box(
+                  modifier = modifier
+                      .fillMaxSize()
+                      .background(baseBg)
+              ) {
+                  ComposeCanvas(modifier = Modifier.fillMaxSize()) {
+                      val w = size.width
+                      val h = size.height
+                      val maxDim = maxOf(w, h).coerceAtLeast(1f)
+                      // Cloud 1: Upper-left / center slow drifting orb
+                      val c1Center = Offset(
+                          x = w * (0.32f + 0.18f * cos(phase)),
+                          y = h * (0.28f + 0.14f * sin(phase))
+                      )
+                      drawCircle(
+                          brush = Brush.radialGradient(
+                              colors = listOf(
+                                  c1.copy(alpha = 0.62f),
+                                  c1.copy(alpha = 0.28f),
+                                  Color.Transparent
+                              ),
+                              center = c1Center,
+                              radius = maxDim * 0.68f
+                          ),
+                          radius = maxDim * 0.68f,
+                          center = c1Center
+                      )
+                      // Cloud 2: Lower-right counter-drifting orb
+                      val c2Center = Offset(
+                          x = w * (0.72f + 0.17f * sin(phase * 0.85f + 1.4f)),
+                          y = h * (0.66f + 0.15f * cos(phase * 0.85f + 1.4f))
+                      )
+                      drawCircle(
+                          brush = Brush.radialGradient(
+                              colors = listOf(
+                                  c2.copy(alpha = 0.56f),
+                                  c2.copy(alpha = 0.24f),
+                                  Color.Transparent
+                              ),
+                              center = c2Center,
+                              radius = maxDim * 0.72f
+                          ),
+                          radius = maxDim * 0.72f,
+                          center = c2Center
+                      )
+                      // Cloud 3: Center-bottom soft ambient glow
+                      val c3Center = Offset(
+                          x = w * (0.45f + 0.16f * sin(phase * 0.65f + 3.1f)),
+                          y = h * (0.48f + 0.16f * cos(phase * 0.65f + 2.2f))
+                      )
+                      drawCircle(
+                          brush = Brush.radialGradient(
+                              colors = listOf(
+                                  c3.copy(alpha = 0.48f),
+                                  c3.copy(alpha = 0.18f),
+                                  Color.Transparent
+                              ),
+                              center = c3Center,
+                              radius = maxDim * 0.64f
+                          ),
+                          radius = maxDim * 0.64f,
+                          center = c3Center
+                      )
+                      // Frosted Matte Glass Diffusion Veil (blends all color clouds smoothly with zero harsh edges)
+                      drawRect(
+                          brush = Brush.verticalGradient(
+                              colors = listOf(
+                                  Color(0x26FFFFFF),
+                                  Color(0x14000000),
+                                  Color(0x33000000)
+                              )
+                          )
+                      )
+                  }
+                  content()
+              }
+          }
           @Composable
           fun HappAmbientBackground(
               isDark: Boolean,
@@ -2209,17 +2393,68 @@ jobs:
                   runCatching {
                       AppIconMode.valueOf(prefs.getString(KEY_ICON_MODE, AppIconMode.PADLOCK.name) ?: AppIconMode.PADLOCK.name)
                   }.getOrDefault(AppIconMode.PADLOCK)
+              private val appPaletteCache = ConcurrentHashMap<String, List<Color>>()
+              fun getOrExtractAppColorPalette(ctx: Context, pkg: String): List<Color> {
+                  val key = if (pkg.isBlank()) ctx.packageName else pkg
+                  appPaletteCache[key]?.let { return it }
+                  val extracted = runCatching {
+                      val d = ctx.packageManager.getApplicationIcon(key)
+                      val bmp = Bitmap.createBitmap(24, 24, Bitmap.Config.ARGB_8888)
+                      val canvas = Canvas(bmp)
+                      d.setBounds(0, 0, 24, 24)
+                      d.draw(canvas)
+                      val hsv = FloatArray(3)
+                      val candidates = mutableListOf<Pair<Float, Color>>()
+                      for (y in 2 until 22 step 2) {
+                          for (x in 2 until 22 step 2) {
+                              val px = bmp.getPixel(x, y)
+                              val a = android.graphics.Color.alpha(px)
+                              if (a < 140) continue
+                              android.graphics.Color.colorToHSV(px, hsv)
+                              val sat = hsv[1]
+                              val v = hsv[2]
+                              if (v < 0.18f || (sat < 0.15f && v > 0.85f)) continue
+                              // Boost saturation & normalize brightness for lush Xiaomi-style frosted glass glow
+                              hsv[1] = (sat * 1.25f).coerceIn(0.42f, 0.92f)
+                              hsv[2] = v.coerceIn(0.52f, 0.86f)
+                              val boostedInt = android.graphics.Color.HSVToColor(hsv)
+                              candidates.add(hsv[0] to Color(boostedInt))
+                          }
+                      }
+                      if (candidates.isEmpty()) {
+                          listOf(Color(0xFF10B981), Color(0xFF059669), Color(0xFF34D399))
+                      } else {
+                          val primary = candidates[candidates.size / 3].second
+                          val secondary = candidates[(candidates.size * 2) / 3].second
+                          // Create a complementary/shifted 3rd ambient shade for rich depth
+                          val firstHue = candidates.first().first
+                          val shiftedHsv = floatArrayOf((firstHue + 38f) % 360f, 0.68f, 0.74f)
+                          val tertiary = Color(android.graphics.Color.HSVToColor(shiftedHsv))
+                          listOf(primary, secondary, tertiary)
+                      }
+                  }.getOrDefault(listOf(Color(0xFF10B981), Color(0xFF059669), Color(0xFF3B82F6)))
+                  appPaletteCache[key] = extracted
+                  return extracted
+              }
               fun setIconMode(ctx: Context, mode: AppIconMode) {
                   prefs.edit().putString(KEY_ICON_MODE, mode.name).commit()
                   val pm = ctx.packageManager
                   val defaultAlias = ComponentName(ctx, "io.nowlock.app.LauncherDefaultAlias")
                   val calcAlias = ComponentName(ctx, "io.nowlock.app.LauncherCalculatorAlias")
-                  if (mode == AppIconMode.PADLOCK) {
-                      pm.setComponentEnabledSetting(defaultAlias, PackageManager.COMPONENT_ENABLED_STATE_ENABLED, PackageManager.DONT_KILL_APP)
-                      pm.setComponentEnabledSetting(calcAlias, PackageManager.COMPONENT_ENABLED_STATE_DISABLED, PackageManager.DONT_KILL_APP)
-                  } else {
-                      pm.setComponentEnabledSetting(calcAlias, PackageManager.COMPONENT_ENABLED_STATE_ENABLED, PackageManager.DONT_KILL_APP)
-                      pm.setComponentEnabledSetting(defaultAlias, PackageManager.COMPONENT_ENABLED_STATE_DISABLED, PackageManager.DONT_KILL_APP)
+                  when (mode) {
+                      AppIconMode.PADLOCK -> {
+                          pm.setComponentEnabledSetting(defaultAlias, PackageManager.COMPONENT_ENABLED_STATE_ENABLED, PackageManager.DONT_KILL_APP)
+                          pm.setComponentEnabledSetting(calcAlias, PackageManager.COMPONENT_ENABLED_STATE_DISABLED, PackageManager.DONT_KILL_APP)
+                      }
+                      AppIconMode.CALCULATOR -> {
+                          pm.setComponentEnabledSetting(calcAlias, PackageManager.COMPONENT_ENABLED_STATE_ENABLED, PackageManager.DONT_KILL_APP)
+                          pm.setComponentEnabledSetting(defaultAlias, PackageManager.COMPONENT_ENABLED_STATE_DISABLED, PackageManager.DONT_KILL_APP)
+                      }
+                      AppIconMode.HIDDEN -> {
+                          // Disable both launcher aliases so NowLock disappears from the app drawer, while MainActivity remains launchable from the Control Center Quick Tile!
+                          pm.setComponentEnabledSetting(defaultAlias, PackageManager.COMPONENT_ENABLED_STATE_DISABLED, PackageManager.DONT_KILL_APP)
+                          pm.setComponentEnabledSetting(calcAlias, PackageManager.COMPONENT_ENABLED_STATE_DISABLED, PackageManager.DONT_KILL_APP)
+                      }
                   }
               }
               fun toggleAppLock(pkg: String, lock: Boolean) {
@@ -2696,6 +2931,48 @@ jobs:
                   }
               }
           }
+          // Control Center / Quick Settings Tile Service (Works on Samsung, Xiaomi, OPPO/OnePlus, Vivo, Huawei, Pixel!)
+          class NowLockQuickTileService : TileService() {
+              override fun onStartListening() {
+                  super.onStartListening()
+                  runCatching {
+                      AppRepo.init(this)
+                      val tile = qsTile ?: return
+                      tile.label = "NowLock"
+                      tile.icon = Icon.createWithResource(this, R.drawable.ic_nowlock_padlock)
+                      tile.state = if (AppRepo.isAnyPasswordSet()) Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
+                      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                          val s = getStrings(AppRepo.getAppLang())
+                          tile.subtitle = if (AppRepo.isAnyPasswordSet()) s.statusActive else s.tabApps
+                      }
+                      tile.updateTile()
+                  }
+              }
+              override fun onClick() {
+                  super.onClick()
+                  runCatching {
+                      val launchIntent = Intent(this, MainActivity::class.java).apply {
+                          addFlags(
+                              Intent.FLAG_ACTIVITY_NEW_TASK or
+                              Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                              Intent.FLAG_ACTIVITY_SINGLE_TOP
+                          )
+                      }
+                      if (Build.VERSION.SDK_INT >= 34) {
+                          val pi = PendingIntent.getActivity(
+                              this,
+                              777,
+                              launchIntent,
+                              PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                          )
+                          startActivityAndCollapse(pi)
+                      } else {
+                          @Suppress("DEPRECATION")
+                          startActivityAndCollapse(launchIntent)
+                      }
+                  }
+              }
+          }
           class BootStartupReceiver : BroadcastReceiver() {
               override fun onReceive(context: Context?, intent: Intent?) {
                   val ctx = context ?: return
@@ -2756,9 +3033,9 @@ jobs:
                       }
                       val config = LocalConfiguration.current
                       val isCompactScreen = config.screenHeightDp < 700
-                      val primaryTextColor = if (isDark) Color(0xFFF5F6FA) else Color(0xFF1C1E26)
-                      val secondaryTextColor = if (isDark) Color(0xFFA9A6D4) else Color(0xFF72768C)
-                      val accentBlue = if (isDark) Color(0xFF6B63FF) else Color(0xFF5D56F5)
+                      val primaryTextColor = Color(0xFFF8FAFC)
+                      val secondaryTextColor = Color(0xFFD8DEE9)
+                      val accentBlue = Color(0xFF6EE7B7)
                       val comboMode = AppRepo.getComboMode()
                       val usePattern = (comboMode == LockComboMode.PATTERN_FINGERPRINT && AppRepo.isPatternSet()) ||
                           (!AppRepo.isPinSet() && AppRepo.isPatternSet())
@@ -2842,7 +3119,8 @@ jobs:
                               )
                           }
                       }
-                      HappAmbientBackground(
+                      FrostedAppColorGlassBackground(
+                          targetPkg = targetPkg,
                           isDark = isDark,
                           modifier = Modifier
                               .fillMaxSize()
@@ -4235,40 +4513,75 @@ jobs:
                                                           ) {
                                                               Row(
                                                                   modifier = Modifier.fillMaxWidth(),
-                                                                  horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                                                  horizontalArrangement = Arrangement.spacedBy(8.dp)
                                                               ) {
                                                                   listOf(
                                                                       Triple(AppIconMode.PADLOCK, R.drawable.ic_nowlock_logo, s.iconPadlock),
-                                                                      Triple(AppIconMode.CALCULATOR, R.drawable.ic_nowlock_calculator, s.iconCalculator)
+                                                                      Triple(AppIconMode.CALCULATOR, R.drawable.ic_nowlock_calculator, s.iconCalculator),
+                                                                      Triple(AppIconMode.HIDDEN, R.drawable.ic_nowlock_padlock, s.iconHidden)
                                                                   ).forEach { (modeItem, resId, titleStr) ->
                                                                       val sel = iconMode == modeItem
                                                                       Surface(
                                                                           shape = RoundedCornerShape(14.dp),
-                                                                          color = if (sel) blue.copy(alpha = 0.12f) else Color.Transparent,
+                                                                          color = if (sel) blue.copy(alpha = 0.16f) else Color.Transparent,
                                                                           border = BorderStroke(if (sel) 1.5.dp else 1.dp, if (sel) blue else border),
                                                                           modifier = Modifier
                                                                               .weight(1f)
                                                                               .clickable {
                                                                                   iconMode = modeItem
                                                                                   AppRepo.setIconMode(this@MainActivity, modeItem)
-                                                                                  Toast.makeText(this@MainActivity, "${s.iconChangedToast}: $titleStr", Toast.LENGTH_SHORT).show()
+                                                                                  if (modeItem == AppIconMode.HIDDEN) {
+                                                                                      requestAddControlCenterTile(this@MainActivity, s.controlCenterTileToast)
+                                                                                  } else {
+                                                                                      Toast.makeText(this@MainActivity, "${s.iconChangedToast}: $titleStr", Toast.LENGTH_SHORT).show()
+                                                                                  }
                                                                               }
                                                                       ) {
-                                                                          Row(
-                                                                              modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                                                                              verticalAlignment = Alignment.CenterVertically,
-                                                                              horizontalArrangement = Arrangement.Center
+                                                                          Column(
+                                                                              modifier = Modifier.padding(horizontal = 6.dp, vertical = 10.dp),
+                                                                              horizontalAlignment = Alignment.CenterHorizontally,
+                                                                              verticalArrangement = Arrangement.Center
                                                                           ) {
                                                                               Image(
                                                                                   painter = painterResource(id = resId),
                                                                                   contentDescription = titleStr,
-                                                                                  modifier = Modifier.size(34.dp).clip(RoundedCornerShape(8.dp))
+                                                                                  modifier = Modifier.size(30.dp).clip(RoundedCornerShape(8.dp))
                                                                               )
-                                                                              Spacer(Modifier.width(8.dp))
-                                                                              Text(titleStr, color = txt, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                                                              Spacer(Modifier.height(6.dp))
+                                                                              Text(
+                                                                                  titleStr,
+                                                                                  color = txt,
+                                                                                  fontSize = 10.5.sp,
+                                                                                  fontWeight = FontWeight.SemiBold,
+                                                                                  textAlign = TextAlign.Center,
+                                                                                  maxLines = 2
+                                                                              )
                                                                           }
                                                                       }
                                                                   }
+                                                              }
+                                                              Spacer(Modifier.height(10.dp))
+                                                              Text(
+                                                                  text = s.iconHiddenHint,
+                                                                  color = sub,
+                                                                  fontSize = 11.sp,
+                                                                  lineHeight = 16.sp
+                                                              )
+                                                              Spacer(Modifier.height(10.dp))
+                                                              Button(
+                                                                  onClick = {
+                                                                      requestAddControlCenterTile(this@MainActivity, s.controlCenterTileToast)
+                                                                  },
+                                                                  modifier = Modifier.fillMaxWidth(),
+                                                                  shape = RoundedCornerShape(12.dp),
+                                                                  colors = ButtonDefaults.buttonColors(containerColor = blue)
+                                                              ) {
+                                                                  Text(
+                                                                      text = "⚡ ${s.btnAddControlCenterTile}",
+                                                                      color = Color.White,
+                                                                      fontSize = 12.sp,
+                                                                      fontWeight = FontWeight.SemiBold
+                                                                  )
                                                               }
                                                           }
                                                       }
@@ -4442,7 +4755,7 @@ jobs:
                                                                   )
                                                                   Spacer(Modifier.height(12.dp))
                                                                   AnimatedRgbBrandText(
-                                                                      text = "NowLock v8.1",
+                                                                      text = "NowLock v8.2",
                                                                       fontSize = 25.sp
                                                                   )
                                                                   Text(
@@ -4615,8 +4928,8 @@ jobs:
                                   if (isSelfLocked) {
                                       val config = LocalConfiguration.current
                                       val isCompactScreen = config.screenHeightDp < 700
-                                      val primaryTextColor = if (isDark) Color(0xFFF5F6FA) else Color(0xFF1C1E26)
-                                      val secondaryTextColor = if (isDark) Color(0xFFA9A6D4) else Color(0xFF72768C)
+                                      val primaryTextColor = Color(0xFFF8FAFC)
+                                      val secondaryTextColor = Color(0xFFD8DEE9)
                                       val usePattern = (comboMode == LockComboMode.PATTERN_FINGERPRINT && AppRepo.isPatternSet()) ||
                                           (!AppRepo.isPinSet() && AppRepo.isPatternSet())
                                       val canFp = fpEnabled && canUseFingerprint(this@MainActivity)
@@ -4676,7 +4989,8 @@ jobs:
                                               )
                                           }
                                       }
-                                      HappAmbientBackground(
+                                      FrostedAppColorGlassBackground(
+                                          targetPkg = packageName,
                                           isDark = isDark,
                                           modifier = Modifier
                                               .fillMaxSize()
@@ -5373,11 +5687,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release delete v8.1-nowlock --repo "${{ github.repository }}" --cleanup-tag --yes 2>/dev/null || true
-          gh release create v8.1-nowlock NowLock.apk --repo "${{ github.repository }}" --target "${{ github.sha }}" --title "NowLock v8.1 - Lightweight Release Build, 3-Step Password Change & Progressive Lockout" --notes "## What's New in NowLock v8.1
-          - **Ultra-Smooth 120Hz Tab Swipe & Lightweight R8 Release Build**: Moved Pager offset calculations strictly into the GPU draw phase (graphicsLayer), added background HD icon caching, automatic low-RAM hardware adaptation, and enabled R8 release shrinking to reduce APK size by ~60% while eliminating debug frame stutter.
-          - **3-Step Credential Change Verification**: Changing an existing PIN or Pattern now requires verifying the current credential first, followed by entering and confirming the new credential twice.
-          - **New HD Fingerprint Sensor Icon**: Updated the dialpad and pattern biometric sensor button to the custom multi-ridge fingerprint icon with automatic Light/Dark theme tinting and responsive scaling.
-          - **Progressive Anti-Brute-Force Lockout (10+ Attempts)**: After 10 consecutive failed password attempts, password unlock is disabled for 15 seconds, increasing by +5 seconds for each subsequent failed attempt (while still allowing instant biometric fingerprint unlock).
-          - **Full 5-Language Privacy & Terms Modal**: Translated all 5 sections of the full Privacy Policy & Terms modal across English, Persian, Iranian Azerbaijani, Luri, and Mazandarani/Gilaki."
+          gh release delete v8.2-nowlock --repo "${{ github.repository }}" --cleanup-tag --yes 2>/dev/null || true
+          gh release create v8.2-nowlock NowLock.apk --repo "${{ github.repository }}" --target "${{ github.sha }}" --title "NowLock v8.2 - Control Center Quick Tile, Stealth Launcher Hide & Xiaomi Frosted Glass Lock Screen" --notes "## What's New in NowLock v8.2
+          - **Control Center / Quick Settings Tile (NowLockQuickTileService)**: Added a system Quick Settings tile compatible across Samsung One UI, Xiaomi MIUI/HyperOS, OPPO/OnePlus ColorOS, Vivo, Huawei, and Pixel, plus a 1-tap button in Settings to add the tile directly to the Control Center.
+          - **Stealth Launcher Hide Mode**: Added a 3rd option under App Icon Disguise allowing users to completely hide NowLock from the phone's app drawer/home screen while keeping it accessible anytime via the Control Center shortcut.
+          - **Xiaomi-Style Frosted Matte Glass Lock Screen**: Dynamically extracts the dominant color palette from each locked application's icon and renders slow, soft, diffused ambient color clouds behind an opaque frosted matte glass veil so zero app content is exposed."
 
