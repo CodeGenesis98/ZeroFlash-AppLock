@@ -9,7 +9,7 @@ jobs:
   build-apk:
     runs-on: ubuntu-24.04
     steps:
-      - name: Generate NowLock v8.2 Project, Persistent Keystore & Icons
+      - name: Generate NowLock v8.3 Project, Persistent Keystore & Icons
         shell: python3 {0}
         run: |
           import os, base64
@@ -385,6 +385,34 @@ jobs:
               d = os.path.dirname(p)
               if d: os.makedirs(d, exist_ok=True)
               open(p, "w", encoding="utf-8").write(t.strip() + "\n")
+
+          w("app/src/main/res/drawable/ic_qs_lock_tile.xml", '''
+          <?xml version="1.0" encoding="utf-8"?>
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="24dp"
+              android:height="24dp"
+              android:viewportWidth="24"
+              android:viewportHeight="24">
+              <!-- Letter L -->
+              <path
+                  android:fillColor="#FFFFFF"
+                  android:pathData="M2.0,7.6 L3.7,7.6 L3.7,14.9 L6.3,14.9 L6.3,16.4 L2.0,16.4 Z" />
+              <!-- Letter o -->
+              <path
+                  android:fillColor="#FFFFFF"
+                  android:fillType="evenOdd"
+                  android:pathData="M9.5,9.8 C11.0,9.8 12.1,11.1 12.1,13.1 C12.1,15.1 11.0,16.4 9.5,16.4 C8.0,16.4 6.9,15.1 6.9,13.1 C6.9,11.1 8.0,9.8 9.5,9.8 Z M9.5,11.2 C8.7,11.2 8.4,12.0 8.4,13.1 C8.4,14.2 8.7,15.0 9.5,15.0 C10.3,15.0 10.6,14.2 10.6,13.1 C10.6,12.0 10.3,11.2 9.5,11.2 Z" />
+              <!-- Letter c -->
+              <path
+                  android:fillColor="#FFFFFF"
+                  android:pathData="M16.7,11.7 L15.4,12.1 C15.2,11.5 14.9,11.2 14.5,11.2 C13.8,11.2 13.4,11.9 13.4,13.1 C13.4,14.3 13.8,15.0 14.5,15.0 C15.0,15.0 15.3,14.7 15.5,14.0 L16.8,14.4 C16.4,15.7 15.6,16.4 14.4,16.4 C12.9,16.4 11.9,15.2 11.9,13.1 C11.9,11.0 12.9,9.8 14.5,9.8 C15.6,9.8 16.4,10.5 16.7,11.7 Z" />
+              <!-- Letter k -->
+              <path
+                  android:fillColor="#FFFFFF"
+                  android:pathData="M17.5,7.6 L19.1,7.6 L19.1,12.3 L20.7,10.0 L22.3,10.0 L20.4,12.5 L22.4,16.4 L20.7,16.4 L19.4,13.6 L19.1,14.0 L19.1,16.4 L17.5,16.4 Z" />
+          </vector>
+          ''')
+
           w("app/src/main/res/drawable/ic_nowlock_padlock.xml", '''
           <?xml version="1.0" encoding="utf-8"?>
           <vector xmlns:android="http://schemas.android.com/apk/res/android"
@@ -451,8 +479,8 @@ jobs:
                   minSdk = 26
                   targetSdk = 34
                   val runNum = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
-                  versionCode = 110 + runNum
-                  versionName = "8.2-NowLock"
+                  versionCode = 120 + runNum
+                  versionName = "8.3-NowLock"
               }
               signingConfigs {
                   getByName("debug") {
@@ -677,9 +705,9 @@ jobs:
                       android:exported="false" />
                   <!-- Control Center / Quick Settings Tile Service (Allows opening NowLock even when hidden from Launcher!) -->
                   <service
-                      android:name=".NowLockQuickTileService"
+                      android:name=".NowLockControlCenterTileService"
                       android:exported="true"
-                      android:icon="@drawable/ic_nowlock_padlock"
+                      android:icon="@drawable/ic_qs_lock_tile"
                       android:label="@string/app_name"
                       android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
                       <intent-filter>
@@ -707,7 +735,7 @@ jobs:
           w("app/src/main/java/io/nowlock/app/NowLockApp.kt", r'''
           package io.nowlock.app
           /*
-           * NowLock v8.2
+           * NowLock v8.3
            * Engineered by Hamed (hades.plagueis@gmail.com) & Gemini AI
            */
           import android.Manifest
@@ -877,6 +905,7 @@ jobs:
           import kotlin.math.cos
           import kotlin.math.hypot
           import kotlin.math.sin
+          import kotlin.random.Random
           const val GITHUB_RELEASES_PAGE_URL = "https://github.com/CodeGenesis98/ZeroFlash-AppLock/releases"
           const val GITHUB_SHORT_DISPLAY_LINK = "github.com/CodeGenesis98/ZeroFlash-AppLock"
           enum class ThemeMode { SYSTEM, DARK, LIGHT }
@@ -1755,8 +1784,8 @@ jobs:
               if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                   val sbm = context.getSystemService(StatusBarManager::class.java)
                   if (sbm != null) {
-                      val comp = ComponentName(context, NowLockQuickTileService::class.java)
-                      val icon = Icon.createWithResource(context, R.drawable.ic_nowlock_padlock)
+                      val comp = ComponentName(context, NowLockControlCenterTileService::class.java)
+                      val icon = Icon.createWithResource(context, R.drawable.ic_qs_lock_tile)
                       runCatching {
                           sbm.requestAddTileService(
                               comp,
@@ -1764,8 +1793,16 @@ jobs:
                               icon,
                               ContextCompat.getMainExecutor(context)
                           ) { resultCode ->
-                              if (resultCode != StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ADDED) {
-                                  Toast.makeText(context, fallbackToastMsg, Toast.LENGTH_LONG).show()
+                              when (resultCode) {
+                                  StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ADDED -> {
+                                      Toast.makeText(context, "✓ NowLock (Lock)", Toast.LENGTH_SHORT).show()
+                                  }
+                                  StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ALREADY_ADDED -> {
+                                      Toast.makeText(context, fallbackToastMsg, Toast.LENGTH_LONG).show()
+                                  }
+                                  else -> {
+                                      Toast.makeText(context, fallbackToastMsg, Toast.LENGTH_LONG).show()
+                                  }
                               }
                           }
                           return
@@ -1784,33 +1821,38 @@ jobs:
               content: @Composable BoxScope.() -> Unit
           ) {
               val context = LocalContext.current
-              val palette = remember(targetPkg) {
-                  AppRepo.getOrExtractAppColorPalette(context, targetPkg)
+              // Extract the locked app's color palette and randomly shuffle/pair its colors + phase seed on each open
+              val basePalette = remember(targetPkg) {
+                  AppRepo.getOrExtractAppColorPalette(context, targetPkg).shuffled()
               }
-              val c1 = palette[0]
-              val c2 = palette[1]
-              val c3 = palette[2]
+              val randomSeedOffset = remember(targetPkg) { Random.nextFloat() * 6.28f }
+              // Light Theme: uses the locked app's bright, vivid colors directly.
+              // Dark Theme: takes that exact same color combination from the locked app and darkens it!
+              val c1 = if (isDark) lerp(basePalette[0], Color(0xFF070A12), 0.45f) else basePalette[0]
+              val c2 = if (isDark) lerp(basePalette[1 % basePalette.size], Color(0xFF070A12), 0.45f) else basePalette[1 % basePalette.size]
+              val c3 = if (isDark) lerp(basePalette[2 % basePalette.size], Color(0xFF070A12), 0.45f) else basePalette[2 % basePalette.size]
+              val c4 = if (isDark) lerp(basePalette[3 % basePalette.size], Color(0xFF070A12), 0.45f) else basePalette[3 % basePalette.size]
               val isLowEnd = AppRepo.isLowEndHardware
               val phase = if (isLowEnd) {
-                  0.22f
+                  randomSeedOffset
               } else {
                   val infiniteTransition = rememberInfiniteTransition(label = "xiaomiFrostedFlow")
                   val animPhase by infiniteTransition.animateFloat(
                       initialValue = 0f,
                       targetValue = 6.2831855f,
                       animationSpec = infiniteRepeatable(
-                          animation = tween(durationMillis = 16000, easing = LinearEasing),
+                          animation = tween(durationMillis = 8800, easing = LinearEasing),
                           repeatMode = RepeatMode.Restart
                       ),
                       label = "frostedPhase"
                   )
-                  animPhase
+                  animPhase + randomSeedOffset
               }
-              // Opaque deep frosted base so 0% of underlying app text/content is visible, tinted by the locked app's dominant hue
+              // Opaque frosted glass base (no underlying app text/content is visible, zero white top/bottom border)
               val baseBg = if (isDark) {
-                  lerp(Color(0xFF0B1017), c1, 0.28f)
+                  lerp(Color(0xFF070A12), c1, 0.34f)
               } else {
-                  lerp(Color(0xFF161F2C), c1, 0.36f)
+                  lerp(Color(0xFF1A2433), c1, 0.62f)
               }
               Box(
                   modifier = modifier
@@ -1821,69 +1863,83 @@ jobs:
                       val w = size.width
                       val h = size.height
                       val maxDim = maxOf(w, h).coerceAtLeast(1f)
-                      // Cloud 1: Upper-left / center slow drifting orb
+                      val orbAlphaCore = if (isDark) 0.78f else 0.88f
+                      val orbAlphaMid = if (isDark) 0.36f else 0.46f
+                      // Orb 1: Wide sweeping upper-left to center-right path
                       val c1Center = Offset(
-                          x = w * (0.32f + 0.18f * cos(phase)),
-                          y = h * (0.28f + 0.14f * sin(phase))
+                          x = w * (0.28f + 0.32f * cos(phase)),
+                          y = h * (0.24f + 0.22f * sin(phase))
                       )
                       drawCircle(
                           brush = Brush.radialGradient(
                               colors = listOf(
-                                  c1.copy(alpha = 0.62f),
-                                  c1.copy(alpha = 0.28f),
+                                  c1.copy(alpha = orbAlphaCore),
+                                  c1.copy(alpha = orbAlphaMid),
                                   Color.Transparent
                               ),
                               center = c1Center,
-                              radius = maxDim * 0.68f
+                              radius = maxDim * 0.52f
                           ),
-                          radius = maxDim * 0.68f,
+                          radius = maxDim * 0.52f,
                           center = c1Center
                       )
-                      // Cloud 2: Lower-right counter-drifting orb
+                      // Orb 2: Counter-rotating lower-right to center-left path
                       val c2Center = Offset(
-                          x = w * (0.72f + 0.17f * sin(phase * 0.85f + 1.4f)),
-                          y = h * (0.66f + 0.15f * cos(phase * 0.85f + 1.4f))
+                          x = w * (0.72f + 0.30f * sin(phase + 1.57f)),
+                          y = h * (0.70f + 0.24f * cos(phase + 1.57f))
                       )
                       drawCircle(
                           brush = Brush.radialGradient(
                               colors = listOf(
-                                  c2.copy(alpha = 0.56f),
-                                  c2.copy(alpha = 0.24f),
+                                  c2.copy(alpha = orbAlphaCore),
+                                  c2.copy(alpha = orbAlphaMid),
                                   Color.Transparent
                               ),
                               center = c2Center,
-                              radius = maxDim * 0.72f
+                              radius = maxDim * 0.54f
                           ),
-                          radius = maxDim * 0.72f,
+                          radius = maxDim * 0.54f,
                           center = c2Center
                       )
-                      // Cloud 3: Center-bottom soft ambient glow
+                      // Orb 3: Diagonal figure-8 ambient wave
                       val c3Center = Offset(
-                          x = w * (0.45f + 0.16f * sin(phase * 0.65f + 3.1f)),
-                          y = h * (0.48f + 0.16f * cos(phase * 0.65f + 2.2f))
+                          x = w * (0.50f + 0.34f * sin(phase + 3.14f)),
+                          y = h * (0.46f + 0.26f * sin(phase * 2f))
                       )
                       drawCircle(
                           brush = Brush.radialGradient(
                               colors = listOf(
-                                  c3.copy(alpha = 0.48f),
-                                  c3.copy(alpha = 0.18f),
+                                  c3.copy(alpha = orbAlphaCore * 0.92f),
+                                  c3.copy(alpha = orbAlphaMid * 0.85f),
                                   Color.Transparent
                               ),
                               center = c3Center,
-                              radius = maxDim * 0.64f
+                              radius = maxDim * 0.48f
                           ),
-                          radius = maxDim * 0.64f,
+                          radius = maxDim * 0.48f,
                           center = c3Center
                       )
-                      // Frosted Matte Glass Diffusion Veil (blends all color clouds smoothly with zero harsh edges)
-                      drawRect(
-                          brush = Brush.verticalGradient(
+                      // Orb 4: Soft accent highlight orb
+                      val c4Center = Offset(
+                          x = w * (0.36f + 0.28f * cos(phase + 4.4f)),
+                          y = h * (0.78f + 0.20f * sin(phase + 4.4f))
+                      )
+                      drawCircle(
+                          brush = Brush.radialGradient(
                               colors = listOf(
-                                  Color(0x26FFFFFF),
-                                  Color(0x14000000),
-                                  Color(0x33000000)
-                              )
-                          )
+                                  c4.copy(alpha = orbAlphaCore * 0.85f),
+                                  c4.copy(alpha = orbAlphaMid * 0.75f),
+                                  Color.Transparent
+                              ),
+                              center = c4Center,
+                              radius = maxDim * 0.46f
+                          ),
+                          radius = maxDim * 0.46f,
+                          center = c4Center
+                      )
+                      // Uniform Matte Frosted Glass Veil (No top or bottom white fade border!)
+                      drawRect(
+                          color = if (isDark) Color(0x24050811) else Color(0x18101824)
                       )
                   }
                   content()
@@ -2399,40 +2455,41 @@ jobs:
                   appPaletteCache[key]?.let { return it }
                   val extracted = runCatching {
                       val d = ctx.packageManager.getApplicationIcon(key)
-                      val bmp = Bitmap.createBitmap(24, 24, Bitmap.Config.ARGB_8888)
+                      val bmp = Bitmap.createBitmap(28, 28, Bitmap.Config.ARGB_8888)
                       val canvas = Canvas(bmp)
-                      d.setBounds(0, 0, 24, 24)
+                      d.setBounds(0, 0, 28, 28)
                       d.draw(canvas)
                       val hsv = FloatArray(3)
-                      val candidates = mutableListOf<Pair<Float, Color>>()
-                      for (y in 2 until 22 step 2) {
-                          for (x in 2 until 22 step 2) {
+                      val distinctHues = mutableListOf<Pair<Float, Color>>()
+                      for (y in 2 until 26 step 2) {
+                          for (x in 2 until 26 step 2) {
                               val px = bmp.getPixel(x, y)
                               val a = android.graphics.Color.alpha(px)
-                              if (a < 140) continue
+                              if (a < 150) continue
                               android.graphics.Color.colorToHSV(px, hsv)
                               val sat = hsv[1]
                               val v = hsv[2]
-                              if (v < 0.18f || (sat < 0.15f && v > 0.85f)) continue
-                              // Boost saturation & normalize brightness for lush Xiaomi-style frosted glass glow
-                              hsv[1] = (sat * 1.25f).coerceIn(0.42f, 0.92f)
-                              hsv[2] = v.coerceIn(0.52f, 0.86f)
-                              val boostedInt = android.graphics.Color.HSVToColor(hsv)
-                              candidates.add(hsv[0] to Color(boostedInt))
+                              if (v < 0.16f || (sat < 0.14f && v > 0.88f)) continue
+                              hsv[1] = (sat * 1.28f).coerceIn(0.58f, 0.95f)
+                              hsv[2] = v.coerceIn(0.62f, 0.90f)
+                              val c = Color(android.graphics.Color.HSVToColor(hsv))
+                              distinctHues.add(hsv[0] to c)
                           }
                       }
-                      if (candidates.isEmpty()) {
-                          listOf(Color(0xFF10B981), Color(0xFF059669), Color(0xFF34D399))
+                      if (distinctHues.isEmpty()) {
+                          listOf(Color(0xFF10B981), Color(0xFF059669), Color(0xFF34D399), Color(0xFF0D9488))
                       } else {
-                          val primary = candidates[candidates.size / 3].second
-                          val secondary = candidates[(candidates.size * 2) / 3].second
-                          // Create a complementary/shifted 3rd ambient shade for rich depth
-                          val firstHue = candidates.first().first
-                          val shiftedHsv = floatArrayOf((firstHue + 38f) % 360f, 0.68f, 0.74f)
-                          val tertiary = Color(android.graphics.Color.HSVToColor(shiftedHsv))
-                          listOf(primary, secondary, tertiary)
+                          val sorted = distinctHues.sortedBy { it.first }
+                          val baseH = sorted[sorted.size / 2].first
+                          val c1 = sorted.first().second
+                          val c2 = sorted[sorted.size / 2].second
+                          val c3 = sorted.last().second
+                          // Add rich harmonic neighbor hues derived from the app's dominant color so movement is always vivid and visible!
+                          val harmonic1 = Color(android.graphics.Color.HSVToColor(floatArrayOf((baseH + 42f) % 360f, 0.78f, 0.84f)))
+                          val harmonic2 = Color(android.graphics.Color.HSVToColor(floatArrayOf((baseH + 315f) % 360f, 0.82f, 0.72f)))
+                          listOf(c1, c2, harmonic1, harmonic2, c3).distinct()
                       }
-                  }.getOrDefault(listOf(Color(0xFF10B981), Color(0xFF059669), Color(0xFF3B82F6)))
+                  }.getOrDefault(listOf(Color(0xFF10B981), Color(0xFF059669), Color(0xFF34D399), Color(0xFF0D9488)))
                   appPaletteCache[key] = extracted
                   return extracted
               }
@@ -2932,21 +2989,27 @@ jobs:
               }
           }
           // Control Center / Quick Settings Tile Service (Works on Samsung, Xiaomi, OPPO/OnePlus, Vivo, Huawei, Pixel!)
-          class NowLockQuickTileService : TileService() {
-              override fun onStartListening() {
-                  super.onStartListening()
+          class NowLockControlCenterTileService : TileService() {
+              private fun refreshTileState() {
                   runCatching {
                       AppRepo.init(this)
                       val tile = qsTile ?: return
                       tile.label = "NowLock"
-                      tile.icon = Icon.createWithResource(this, R.drawable.ic_nowlock_padlock)
-                      tile.state = if (AppRepo.isAnyPasswordSet()) Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
+                      tile.icon = Icon.createWithResource(this, R.drawable.ic_qs_lock_tile)
+                      tile.state = Tile.STATE_ACTIVE
                       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                          val s = getStrings(AppRepo.getAppLang())
-                          tile.subtitle = if (AppRepo.isAnyPasswordSet()) s.statusActive else s.tabApps
+                          tile.subtitle = "Lock"
                       }
                       tile.updateTile()
                   }
+              }
+              override fun onTileAdded() {
+                  super.onTileAdded()
+                  refreshTileState()
+              }
+              override fun onStartListening() {
+                  super.onStartListening()
+                  refreshTileState()
               }
               override fun onClick() {
                   super.onClick()
@@ -3216,8 +3279,6 @@ jobs:
                               },
                               onExitClick = { navigateHomeAndClose() }
                           )
-                          NotchTranslucentStatusBarOverlay(isDark = isDark)
-                          GlassyNavigationBarOverlay(isDark = isDark, modifier = Modifier.align(Alignment.BottomCenter))
                       }
                   }
               }
@@ -4518,7 +4579,7 @@ jobs:
                                                                   listOf(
                                                                       Triple(AppIconMode.PADLOCK, R.drawable.ic_nowlock_logo, s.iconPadlock),
                                                                       Triple(AppIconMode.CALCULATOR, R.drawable.ic_nowlock_calculator, s.iconCalculator),
-                                                                      Triple(AppIconMode.HIDDEN, R.drawable.ic_nowlock_padlock, s.iconHidden)
+                                                                      Triple(AppIconMode.HIDDEN, R.drawable.ic_qs_lock_tile, s.iconHidden)
                                                                   ).forEach { (modeItem, resId, titleStr) ->
                                                                       val sel = iconMode == modeItem
                                                                       Surface(
@@ -4530,11 +4591,7 @@ jobs:
                                                                               .clickable {
                                                                                   iconMode = modeItem
                                                                                   AppRepo.setIconMode(this@MainActivity, modeItem)
-                                                                                  if (modeItem == AppIconMode.HIDDEN) {
-                                                                                      requestAddControlCenterTile(this@MainActivity, s.controlCenterTileToast)
-                                                                                  } else {
-                                                                                      Toast.makeText(this@MainActivity, "${s.iconChangedToast}: $titleStr", Toast.LENGTH_SHORT).show()
-                                                                                  }
+                                                                                  Toast.makeText(this@MainActivity, "${s.iconChangedToast}: $titleStr", Toast.LENGTH_SHORT).show()
                                                                               }
                                                                       ) {
                                                                           Column(
@@ -4755,7 +4812,7 @@ jobs:
                                                                   )
                                                                   Spacer(Modifier.height(12.dp))
                                                                   AnimatedRgbBrandText(
-                                                                      text = "NowLock v8.2",
+                                                                      text = "NowLock v8.3",
                                                                       fontSize = 25.sp
                                                                   )
                                                                   Text(
@@ -5103,9 +5160,11 @@ jobs:
                                           )
                                       }
                                   }
-                                  // Translucent Glassy Top Status Bar & Bottom Navigation Bar Overlays
-                                  NotchTranslucentStatusBarOverlay(isDark = isDark)
-                                  GlassyNavigationBarOverlay(isDark = isDark, modifier = Modifier.align(Alignment.BottomCenter))
+                                  // Translucent Glassy Top Status Bar & Bottom Navigation Bar Overlays (ONLY active in NowLock main UI, NOT on Lock Screen!)
+                                  if (!isSelfLocked) {
+                                      NotchTranslucentStatusBarOverlay(isDark = isDark)
+                                      GlassyNavigationBarOverlay(isDark = isDark, modifier = Modifier.align(Alignment.BottomCenter))
+                                  }
                                   if (showPrivacyFullModal) {
                                       PrivacyPolicyFullModal(
                                           s = s,
@@ -5687,9 +5746,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release delete v8.2-nowlock --repo "${{ github.repository }}" --cleanup-tag --yes 2>/dev/null || true
-          gh release create v8.2-nowlock NowLock.apk --repo "${{ github.repository }}" --target "${{ github.sha }}" --title "NowLock v8.2 - Control Center Quick Tile, Stealth Launcher Hide & Xiaomi Frosted Glass Lock Screen" --notes "## What's New in NowLock v8.2
-          - **Control Center / Quick Settings Tile (NowLockQuickTileService)**: Added a system Quick Settings tile compatible across Samsung One UI, Xiaomi MIUI/HyperOS, OPPO/OnePlus ColorOS, Vivo, Huawei, and Pixel, plus a 1-tap button in Settings to add the tile directly to the Control Center.
-          - **Stealth Launcher Hide Mode**: Added a 3rd option under App Icon Disguise allowing users to completely hide NowLock from the phone's app drawer/home screen while keeping it accessible anytime via the Control Center shortcut.
-          - **Xiaomi-Style Frosted Matte Glass Lock Screen**: Dynamically extracts the dominant color palette from each locked application's icon and renders slow, soft, diffused ambient color clouds behind an opaque frosted matte glass veil so zero app content is exposed."
+          gh release delete v8.3-nowlock --repo "${{ github.repository }}" --cleanup-tag --yes 2>/dev/null || true
+          gh release create v8.3-nowlock NowLock.apk --repo "${{ github.repository }}" --target "${{ github.sha }}" --title "NowLock v8.3 - Custom Lock Tile Icon & Theme-Adaptive Dynamic Frosted Glass" --notes "## What's New in NowLock v8.3
+          - **Custom 'Lock' Control Center Tile Icon**: Replaced the solid-background drawable with a dedicated 24dp monochrome transparent-background vector icon spelling 'Lock' that fits cleanly inside the circular Quick Settings tile across all Android OEMs.
+          - **Theme-Adaptive Dynamic Frosted Glass Lock Screen**: Automatically extracts and randomly arranges vibrant color combinations from the locked app's icon in Light Theme, darkens that exact color palette in Dark Theme, and increases orbital motion contrast so the flowing color clouds are clearly visible behind the frosted glass.
+          - **Clean Edge-to-Edge Lock Screen**: Removed the top and bottom translucent fade overlays from the lock screen so they only appear inside the main NowLock application interface."
 
