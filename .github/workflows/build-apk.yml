@@ -473,12 +473,7 @@ jobs:
           }
           android {
               namespace = "io.nowlock.app"
-              val sdkDir = System.getenv("ANDROID_HOME") ?: "/usr/local/lib/android/sdk"
-              compileSdk = when {
-                  file("$sdkDir/platforms/android-36").exists() -> 36
-                  file("$sdkDir/platforms/android-35").exists() -> 35
-                  else -> 34
-              }
+              compileSdk = 34
               defaultConfig {
                   applicationId = "io.nowlock.app"
                   minSdk = 26
@@ -4936,9 +4931,10 @@ jobs:
                       var relockMinutes by remember { mutableStateOf(AppRepo.getRelockDelayMinutes()) }
                       var recentsPrivacy by remember { mutableStateOf(AppRepo.isRecentsPrivacyEnabled()) }
                       val sysDark = isSystemInDarkTheme()
+                      val isAmoled = themeMode == ThemeMode.AMOLED
                       val isDark = when (themeMode) {
                           ThemeMode.SYSTEM -> sysDark
-                          ThemeMode.DARK -> true
+                          ThemeMode.DARK, ThemeMode.AMOLED -> true
                           ThemeMode.LIGHT -> false
                       }
                       SideEffect {
@@ -7049,7 +7045,6 @@ jobs:
           export JAVA_HOME="${JAVA_HOME_17_X64:-/usr/lib/jvm/temurin-17-jdk-amd64}"
           export PATH="$JAVA_HOME/bin:$PATH"
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null 2>&1 || true
-          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-36" "platforms;android-35" > /dev/null 2>&1 || true
           if [ ! -f /tmp/gradle-8.7/bin/gradle ]; then
             curl -sL https://services.gradle.org/distributions/gradle-8.7-bin.zip -o /tmp/gradle-8.7.zip
             unzip -q -o /tmp/gradle-8.7.zip -d /tmp
