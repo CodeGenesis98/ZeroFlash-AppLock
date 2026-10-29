@@ -9,7 +9,7 @@ jobs:
   build-apk:
     runs-on: ubuntu-24.04
     steps:
-      - name: Generate NowLock v7.7 Project, Persistent Keystore & Icons
+      - name: Generate NowLock v8.0 Project, Persistent Keystore & Icons
         shell: python3 {0}
         run: |
           import os, base64
@@ -338,8 +338,8 @@ jobs:
                   minSdk = 26
                   targetSdk = 34
                   val runNum = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
-                  versionCode = 60 + runNum
-                  versionName = "7.7-NowLock"
+                  versionCode = 90 + runNum
+                  versionName = "8.0-NowLock"
               }
               signingConfigs {
                   getByName("debug") {
@@ -442,7 +442,7 @@ jobs:
                   <activity
                       android:name=".MainActivity"
                       android:exported="true"
-                      android:configChanges="uiMode|locale|layoutDirection|orientation|screenSize|smallestScreenSize|screenLayout"
+                      android:configChanges="uiMode|locale|layoutDirection|orientation|screenSize|smallestScreenSize|screenLayout|density"
                       android:launchMode="singleTop">
                   </activity>
                   <!-- Default Yellow Padlock Launcher Alias -->
@@ -480,7 +480,8 @@ jobs:
                       android:launchMode="singleInstance"
                       android:excludeFromRecents="true"
                       android:showOnLockScreen="true"
-                      android:configChanges="uiMode|locale|layoutDirection|orientation|screenSize|smallestScreenSize|screenLayout"
+                      android:resizeableActivity="true"
+                      android:configChanges="uiMode|locale|layoutDirection|orientation|screenSize|smallestScreenSize|screenLayout|density"
                       android:theme="@android:style/Theme.DeviceDefault.NoActionBar" />
                   <!-- Engine 1: Accessibility + UsageStats Hybrid Service -->
                   <service
@@ -555,7 +556,7 @@ jobs:
           w("app/src/main/java/io/nowlock/app/NowLockApp.kt", r'''
           package io.nowlock.app
           /*
-           * NowLock v7.7
+           * NowLock v8.0
            * Engineered by Hamed (hades.plagueis@gmail.com) & Gemini AI
            */
           import android.Manifest
@@ -615,6 +616,7 @@ jobs:
           import android.view.Surface
           import android.view.WindowManager
           import android.view.accessibility.AccessibilityEvent
+          import android.view.inputmethod.InputMethodManager
           import android.widget.Button as AndroidButton
           import android.widget.FrameLayout
           import android.widget.ImageView
@@ -641,6 +643,9 @@ jobs:
           import androidx.compose.animation.slideInVertically
           import androidx.compose.animation.slideOutVertically
           import androidx.compose.foundation.BorderStroke
+          import androidx.compose.foundation.ExperimentalFoundationApi
+          import androidx.compose.foundation.pager.HorizontalPager
+          import androidx.compose.foundation.pager.rememberPagerState
           import androidx.compose.foundation.Canvas as ComposeCanvas
           import androidx.compose.foundation.Image
           import androidx.compose.foundation.background
@@ -670,6 +675,7 @@ jobs:
           import androidx.compose.ui.graphics.Brush
           import androidx.compose.ui.graphics.Color
           import androidx.compose.ui.graphics.StrokeCap
+          import androidx.compose.ui.graphics.graphicsLayer
           import androidx.compose.ui.graphics.asImageBitmap
           import androidx.compose.ui.graphics.lerp
           import androidx.compose.ui.input.pointer.pointerInput
@@ -704,6 +710,7 @@ jobs:
           import java.util.Date
           import java.util.Locale
           import java.util.concurrent.ConcurrentHashMap
+          import kotlin.math.abs
           import kotlin.math.floor
           import kotlin.math.hypot
           const val GITHUB_RELEASES_PAGE_URL = "https://github.com/CodeGenesis98/ZeroFlash-AppLock/releases"
@@ -858,7 +865,7 @@ jobs:
                   themeDark = "تاریک",
                   selectLangLabel = "انتخاب زبان کل برنامه:",
                   aboutSubtitle = "طراحی و مهندسی توسط حامد و هوش مصنوعی جمینای (Gemini)",
-                  aboutBody = "به NowLock خوش آمدید. ما (حامد و هوش مصنوعی جمینای) این محصول را با هدف ارائه سریع‌ترین، سبک‌ترین و مطمئن‌ترین سپر محافظتی برای برنامه‌های شخصی شما در سیستم‌عامل اندروید طراحی و مهندسی کرده‌ایم. NowLock با تکیه بر معماری پردازش بلادرنگ و استانداردهای رمزنگاری پیشرفته، بدون کاهش سرعت گوشی یا مصرف محسوس باتری، امنیت کامل حریم خصوصی شما را تضمین می‌کند.",
+                  aboutBody = "به NowLock خوش آمدید. این برنامه ثمره ساعت‌ها تلاش مستمر، مهندسی دقیق و آزمون‌وخطای هدفمند توسط حامد و هوش مصنوعی جمینای (Gemini) است تا یک ابزار امنیتی واقعاً کارآمد، پایدار و سبک برای اندروید شکل بگیرد. از دیدگاه فنی، هیچ برنامه‌ی جانبی (Third-Party) که خارج از هسته‌ی اصلی سیستم‌عامل فعالیت می‌کند نمی‌تواند ادعای مسدودسازی صددرصدی و مطلق تمامی اکشن‌ها یا مسیرهای سیستمی را داشته باشد؛ با این حال، ما در NowLock با ترکیب هوشمندترین مکانیزم‌های مجاز اندروید، یکی از کامل‌ترین، سریع‌ترین و مطمئن‌ترین نسخه‌های ممکن در این حوزه را بدون افت سرعت گوشی یا مصرف محسوس باتری پیاده‌سازی کرده‌ایم.",
                   aboutTechTitle = "فناوری‌ها و زیرساخت مهندسی نرم‌افزار:",
                   aboutTechBullets = listOf(
                       "• زبان برنامه‌نویسی Kotlin: پیاده‌سازی ۱۰۰٪ بومی (Native) برای دستیابی به بالاترین سرعت اجرا و پایداری در سطح سیستم‌عامل اندروید.",
@@ -866,8 +873,8 @@ jobs:
                       "• الگوریتم‌های رمزنگاری SHA-256 و AndroidX Biometric: حفاظت سخت‌افزاری و یک‌طرفه از داده‌های احراز هویت.",
                       "• زیرساخت ابری GitHub Actions & Python CI/CD: سیستم کامپایل، تست و انتشار خودکار نسخه‌های رسمی برنامه."
                   ),
-                  aboutPrivacyTitle = "حریم خصوصی و امنیت اطلاعات کاربران:",
-                  aboutPrivacySummary = "تمامی اطلاعات، رمزها و تنظیمات شما به صورت ۱۰۰٪ آفلاین فقط بر روی حافظه امن دستگاه خودتان نگهداری می‌شوند و هیچ داده‌ای به سرورهای خارجی ارسال نمی‌گردد.",
+                  aboutPrivacyTitle = "حریم خصوصی، امنیت داده‌ها و مسئولیت کاربر:",
+                  aboutPrivacySummary = "تمامی تنظیمات و گذرواژه‌های شما به صورت ۱۰۰٪ آفلاین فقط روی حافظه دستگاه خودتان ذخیره می‌شوند و هیچ سرور خارجی یا پشتیبان ابری برای دسترسی به آن‌ها وجود ندارد؛ از این‌رو امکان بازیابی رمز فراموش‌شده از سوی ما وجود نداشته و مسئولیت به خاطر سپردن پین‌کد یا الگو و هرگونه پیامد ناشی از فراموشی آن، تماماً بر عهده خود کاربر است.",
                   aboutShowMoreBtn = "نمایش بیشتر (متن کامل حریم خصوصی و شرایط استفاده) ⬅",
                   aboutContactTitle = "پشتیبانی و ارتباط مستقیم با توسعه‌دهنده (حامد):",
                   aboutUpdateBtn = "بررسی بروزرسانی برنامه",
@@ -947,7 +954,7 @@ jobs:
                   themeDark = "Dark",
                   selectLangLabel = "Select Full Application Language:",
                   aboutSubtitle = "Engineered by Hamed & Gemini AI",
-                  aboutBody = "Welcome to NowLock. Engineered by Hamed and Gemini AI, NowLock delivers an ultra-fast, lightweight, and uncompromising privacy shield for your personal Android applications. Built on a real-time dual-detection architecture and modern cryptographic standards, NowLock protects your digital life seamlessly with zero lag and minimal battery impact.",
+                  aboutBody = "Welcome to NowLock. This product is the culmination of extensive engineering, relentless testing, and fine-tuning by Hamed and Gemini AI to build a genuinely practical and dependable privacy shield for Android. From an OS architecture standpoint, no third-party application operating outside the system kernel can guarantee an absolute, unbreakable lock over every system-level action; nevertheless, NowLock harnesses the most effective mechanisms available on Android to deliver one of the most capable, responsive, and reliable versions achievable in its class—with zero lag and minimal battery impact.",
                   aboutTechTitle = "Software Engineering & Core Technologies:",
                   aboutTechBullets = listOf(
                       "• Kotlin Native Architecture: 100% native compilation for maximum execution speed and OS-level stability.",
@@ -955,8 +962,8 @@ jobs:
                       "• SHA-256 Cryptography & AndroidX Biometric: Hardware-backed authentication and one-way credential hashing.",
                       "• GitHub Actions & Python Cloud CI/CD: Automated build, verification, and release delivery pipeline."
                   ),
-                  aboutPrivacyTitle = "Privacy Policy & Data Security:",
-                  aboutPrivacySummary = "All passwords, configurations, and security logs remain 100% offline on your device. NowLock collects zero personal data and uses no external tracking servers.",
+                  aboutPrivacyTitle = "Privacy, Data Security & User Responsibility:",
+                  aboutPrivacySummary = "All credentials and configurations remain 100% offline on your device with no external servers or cloud backups. Because we cannot remotely access or reset your credentials, the responsibility for remembering your PIN or Pattern—and any consequences resulting from forgetting it—rests solely with you.",
                   aboutShowMoreBtn = "Show More (Full Privacy Policy & Terms) ➔",
                   aboutContactTitle = "Developer Support & Contact (Hamed):",
                   aboutUpdateBtn = "Check for Updates",
@@ -1036,7 +1043,7 @@ jobs:
                   themeDark = "تاریک (قارانلیق)",
                   selectLangLabel = "کلّ برنامه‌نین دیلینی سئچین:",
                   aboutSubtitle = "طراحی و مهندسی حامد و جمینای (Gemini) هوش مصنوعی طرفیندن",
-                  aboutBody = "NowLock برنامه‌سینه خوش گلمیسیز. بیز (حامد و جمینای هوش مصنوعی) بو برنامه‌نی اندروید گؤشولاردا شخصی برنامه‌لریزین امنیتی اوچون ان تئز، ان یونگول و مطمئن سپر کیمی طراحی ائله‌میشیک. NowLock بدون اینکه تئلفونون سرعتین آزالتسین یا باتری مصرف ائله‌سین، حریم خصوصی‌زی تام قورویور.",
+                  aboutBody = "NowLock برنامه‌سینه خوش گلمیسیز. بو برنامه حامد و جمینای (Gemini) هوش مصنوعی طرفیندن چوخلو تلاش، دقیق مهندسی و بارها تست ائدیلمک نتیجه‌سینده دوزلیب تا اندرویدده واقعاً ایشه‌غلن و محکم بیر محافظ اولسون. سیستم‌عاملین ساختارینا گؤره، هئچ بیر جانبی (Third-Party) برنامه ادعا ائلیه بیلمز کی بؤتون سیستمی اکشن‌لری و یوللاری یوزده‌یوز و مطلق شکیلده باغلاییر؛ اما بیز NowLock-دا اندرویدین ان یاخشی روشلرین بیر یئره ییغمیشیق تا بو سبک برنامه‌لرین ایچینده ان کامل، ان تئز و ان مطمئن نسخه‌لردن بیرینی بدون سرعت دوشمه‌سی و باتری مصرفی سیزه تقدیم ائلیک.",
                   aboutTechTitle = "تکنولوژیلر و مهندسی زیرساختی:",
                   aboutTechBullets = listOf(
                       "• برنامه نویسی دیلی Kotlin: پیاده‌سازی ۱۰۰٪ بومی (Native) اندرویدین ان یؤکسک سرعتی و پایدارلیغی اوچون.",
@@ -1044,8 +1051,8 @@ jobs:
                       "• رمزنگاری SHA-256 و AndroidX Biometric: رمز و بارماق ایزی‌نین سخت‌افزاری امنیتی.",
                       "• زیرساخت ابری GitHub Actions & Python CI/CD: کامپایل و انتشار اوتومات نسخه‌لر."
                   ),
-                  aboutPrivacyTitle = "حریم خصوصی و اطلاعات امنیتی:",
-                  aboutPrivacySummary = "بؤتون رمزلریز و تنظیماتیز ۱۰۰٪ آفلاین فقط اؤز گؤشوزون حافظه‌سینده قالیر و هئچ یئره گؤندریلمیر.",
+                  aboutPrivacyTitle = "حریم خصوصی، اطلاعات امنیتی و کاربرین مسئولیتی:",
+                  aboutPrivacySummary = "بؤتون رمزلریز و تنظیماتیز ۱۰۰٪ آفلاین فقط اؤز گؤشوزون حافظه‌سینده قالیر و هئچ بیر خارجی سئروئر یولو یوخدور؛ بونا گؤره یاددان چیخان رمزی بیزیم طرفیمیزدن برگردانماق ممکن دئییل و پین‌کدو یا الگونو یاددا ساخلاماق مسئولیتی و اونو یاددان چیخارماغین هر جور نتیجه‌سی تماماً کاربرین اؤز بؤینونادیر.",
                   aboutShowMoreBtn = "بیشتر گؤستر (حریم خصوصی‌نین تام متنی) ⬅",
                   aboutContactTitle = "پشتیبانی و سازنده‌ینن مستقیم ارتباط (حامد):",
                   aboutUpdateBtn = "برنامه بروزرسانی‌سین یوخلا",
@@ -1125,7 +1132,7 @@ jobs:
                   themeDark = "تاریک",
                   selectLangLabel = "انتخاب زون کل برنامه:",
                   aboutSubtitle = "طراحی و مهندسی توسط حامد و هوش مصنوعی جمینای (Gemini)",
-                  aboutBody = "وه NowLock خوش اومئیت. ایما (حامد و هوش مصنوعی جمینای) ای برنامه نه سی حفاظت زو، سبک و مطمئن د برنامیا شخصی شما د اندروید ساختیمه. NowLock بی کم کردن سرعت گوشی یا مصرف باتری، امنیت کامل حریم شخصی شمانه تامین میکنه.",
+                  aboutBody = "وه NowLock خوش اومئیت. ای برنامه حاصل ساعت‌ها تلاش، مهندسی دقیق و آزمایش‌یا پشت‌سرهم توسط حامد و هوش مصنوعی جمینای (Gemini) هسه تا یه برنامه واقعاً به درد بخور و محکم سی اندروید درست بوئه. د لحاظ فنی، هیچ برنامه جانبی (Third-Party) خارج د هسته اصلی سیستم‌عامل نمیتونه ادعا بکه که همه راه‌یا و اکشن‌یا سیستمی نه صددرصد و قطعی میبنده؛ ولی ایما من NowLock وا بکار گرتن بهترین روش‌یا اندروید، یکی د کامل‌ترین، زوترین و مطمئن‌ترین نسخه‌یا ممکن من ای سبک برنامیا نه بی کم کردن سرعت گوشی و مصرف باتری سیتون ساختیمه.",
                   aboutTechTitle = "فناوری‌یا و زبان‌یا برنامه‌نویسی:",
                   aboutTechBullets = listOf(
                       "• زون برنامه‌نویسی Kotlin: ساخت ۱۰۰٪ بومی سی بالاترین سرعت و پایداری د اندروید.",
@@ -1133,8 +1140,8 @@ jobs:
                       "• رمزنگاری SHA-256 و AndroidX Biometric: حفاظت سخت‌افزاری د رمز و اثر کلک.",
                       "• زیرساخت ابری GitHub Actions & Python CI/CD: ساخت و انتشار خودکار نسخه‌یا رسمی."
                   ),
-                  aboutPrivacyTitle = "حریم شخصی و امنیت اطلاعات:",
-                  aboutPrivacySummary = "همه اطلاعات، رمزیا و سامونیا شما ۱۰۰٪ آفلاین فقط رو گوشی خوتون دیره و سی هیچ سروری فرسائه نمیبو.",
+                  aboutPrivacyTitle = "حریم شخصی، امنیت اطلاعات و مسئولیت کاربر:",
+                  aboutPrivacySummary = "همه رمزیا و سامونیا شما ۱۰۰٪ آفلاین فقط رو حافظه گوشی خوتون ذخیره میبو و هیچ سرور خارجی سی بازیابی رمز وجود ناره؛ هنی سی، مسئولیت ویر داشتن پین‌کد یا الگو و هر مشکل یا پیامدی که د فراموش کردنش پیش بیا، تماماً وه گردن خو کاربره.",
                   aboutShowMoreBtn = "نشون دئن بیشتر (متن کامل حریم شخصی و شرایط) ⬅",
                   aboutContactTitle = "ارتباط مستقیم وا سازنده (حامد):",
                   aboutUpdateBtn = "سیل کردن بروزرسانی برنامه",
@@ -1214,7 +1221,7 @@ jobs:
                   themeDark = "تاریک",
                   selectLangLabel = "کل برنامه زوون ره انتخاب هاکنین:",
                   aboutSubtitle = "طراحی و مهندسی حامد و جمینای (Gemini) هوش مصنوعی جا",
-                  aboutBody = "NowLock ره خوش بمونی. اِما (حامد و جمینای هوش مصنوعی) اینتا محصول ره بساتمی تا سریع‌ترین، سبک‌ترین و مطمئن‌ترین محافظتی سپر شمه شخصی برنامه‌ئون وسّه اندروید دله بائه. NowLock بی اینکه گوشی سرعت ره کم هاکنه یا باتری بخره، شمه حریم خصوصی امنیت ره کامل حفظ کنده.",
+                  aboutBody = "NowLock ره خوش بمونی. اینتا برنامه ساعت‌ها تلاش، دقیق مهندسی و پشت‌سرهم تست هاکردن حامد و جمینای (Gemini) هوش مصنوعی جا بساته بَیّه تا اَتا واقعاً بدردبخور و محکم برنامه اندروید وسّه بوئه. فنی نظر جا، هیچ جانبی برنامه‌ای (Third-Party) که سیستم‌عامل اصلی هسته جا بیرون دره نتونده ادعا هاکنه همه سیستمی اکشن‌ئون و راه‌ئون ره صددرصد و قطعی بندنه؛ ولی اِما NowLock دله اندروید بهترین روش‌ئون ره جمع هاکردمی تا اینتا سبک برنامه‌ئون میون، اَتا از بهترین، سریع‌ترین و مطمئن‌ترین نسخه‌ئون ره بی سرعت افت یا باتری مصرف شما ره هادیم.",
                   aboutTechTitle = "مهندسی زیرساخت و برنامه‌نویسی فناوری‌ئون:",
                   aboutTechBullets = listOf(
                       "• Kotlin برنامه‌نویسی زوون: ۱۰۰٪ بومی (Native) بالاترین سرعت و پایداری وسّه اندروید دله.",
@@ -1222,8 +1229,8 @@ jobs:
                       "• SHA-256 رمزنگاری و AndroidX Biometric: رمز و انگشت اثر سخت‌افزاری حفاظت.",
                       "• GitHub Actions & Python CI/CD: خودکار بساتن و تنک هاکردن رسمی نسخه‌ئون."
                   ),
-                  aboutPrivacyTitle = "شخصی حریم و اطلاعات امنیت:",
-                  aboutPrivacySummary = "شمه همه اطلاعات، رمزها و تنظیمات ۱۰۰٪ آفلاین فقط شمه گوشی حافظه دله موندنه و هیچ سروری وسّه رسنی نونه.",
+                  aboutPrivacyTitle = "شخصی حریم، اطلاعات امنیت و کاربر مسئولیت:",
+                  aboutPrivacySummary = "شمه همه رمزها و تنظیمات ۱۰۰٪ آفلاین فقط شمه گوشی حافظه دله موندنه و هیچ خارجی سروری رمز ورگردوندن وسّه دنی‌یه؛ همینتا وسّه، پین‌کد یا الگو ره یاد داشتن مسئولیت و هر مشکلی که ونه یاد بکردن جا پیش بئه، کاملاً خودِ کاربر گردن دره.",
                   aboutShowMoreBtn = "ویشته هارشا (حریم خصوصی و شرایط کامل متن) ⬅",
                   aboutContactTitle = "سازنده جا مستقیم ارتباط (حامد):",
                   aboutUpdateBtn = "برنامه بروزرسانی ره هارشا",
@@ -1302,7 +1309,13 @@ jobs:
                   putExtra(":settings:show_fragment_args", bundle)
                   addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
               }
-              runCatching { context.startActivity(intent) }
+              runCatching {
+                  context.startActivity(intent)
+              }.onFailure {
+                  runCatching {
+                      context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                  }
+              }
           }
           fun openDirectUsageAccessSettings(context: Context) {
               AppRepo.markLeavingForSettings(context)
@@ -1330,7 +1343,13 @@ jobs:
                   putExtra(":settings:fragment_args_key", context.packageName)
                   addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
               }
-              runCatching { context.startActivity(intent) }
+              runCatching {
+                  context.startActivity(intent)
+              }.onFailure {
+                  runCatching {
+                      context.startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                  }
+              }
           }
           fun openDirectAppDetailsSettings(context: Context) {
               AppRepo.markLeavingForSettings(context)
@@ -1338,6 +1357,60 @@ jobs:
                   addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
               }
               runCatching { context.startActivity(intent) }
+          }
+          // Adaptive Screen Metrics for Compact Phones, Foldables (Z Fold / Flip), Landscape, and Tablets
+          data class AdaptiveScreenMetrics(
+              val widthDp: Int,
+              val heightDp: Int,
+              val isCompactHeight: Boolean,
+              val isUltraShortHeight: Boolean,
+              val isTabletOrUnfolded: Boolean,
+              val useTwoPaneLockLayout: Boolean,
+              val useTwoColumnAppGrid: Boolean,
+              val dialKeySizeDp: Int,
+              val patternGridSizeDp: Int,
+              val contentMaxWidthDp: Int
+          )
+          @Composable
+          fun rememberAdaptiveScreenMetrics(): AdaptiveScreenMetrics {
+              val cfg = LocalConfiguration.current
+              val w = cfg.screenWidthDp
+              val h = cfg.screenHeightDp
+              val isUltraShort = h < 580
+              val isCompact = h < 700
+              val isTabOrFold = w >= 600
+              // Use 2-pane side-by-side lock screen when in landscape or on wide foldable inner screens with short vertical height
+              val twoPaneLock = (w >= 580 && w > h) || (w >= 600 && h < 680)
+              val twoColApps = w >= 640
+              val dialKey = when {
+                  twoPaneLock -> (h / 6).coerceIn(50, 72)
+                  h < 580 -> 56
+                  h < 660 -> 66
+                  h < 740 -> 74
+                  w >= 600 && h >= 820 -> 88
+                  else -> 82
+              }
+              val patGrid = when {
+                  twoPaneLock -> (h - 90).coerceIn(170, 250)
+                  h < 580 -> 190
+                  h < 660 -> 220
+                  h < 740 -> 246
+                  w >= 600 && h >= 820 -> 300
+                  else -> 276
+              }
+              val maxContentW = if (w >= 840) 800 else if (w >= 600) 680 else 10000
+              return AdaptiveScreenMetrics(
+                  widthDp = w,
+                  heightDp = h,
+                  isCompactHeight = isCompact,
+                  isUltraShortHeight = isUltraShort,
+                  isTabletOrUnfolded = isTabOrFold,
+                  useTwoPaneLockLayout = twoPaneLock,
+                  useTwoColumnAppGrid = twoColApps,
+                  dialKeySizeDp = dialKey,
+                  patternGridSizeDp = patGrid,
+                  contentMaxWidthDp = maxContentW
+              )
           }
           fun configureNotchAndGlassBars(activity: Activity, isDark: Boolean) {
               runCatching {
@@ -1560,7 +1633,11 @@ jobs:
           }
           // Real Silent Front-Camera Intruder Photo Saver -> Saves directly to Phone Gallery (Pictures/NowLock_Intruders)
           object IntruderPhotoSaver {
+              @Volatile private var isCapturing = false
+              @Volatile private var lastCaptureTime = 0L
               fun captureFrontCameraToGallery(context: Context, targetPkg: String) {
+                  val now = System.currentTimeMillis()
+                  if (isCapturing || (now - lastCaptureTime) < 2500L) return
                   if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
                       return
                   }
@@ -1571,6 +1648,11 @@ jobs:
                           chars.get(CameraCharacteristics.LENS_FACING) == CameraCharacteristics.LENS_FACING_FRONT
                       } ?: cameraManager.cameraIdList.firstOrNull()
                   }.getOrNull() ?: return
+                  val sensorOrientation = runCatching {
+                      cameraManager.getCameraCharacteristics(frontCameraId).get(CameraCharacteristics.SENSOR_ORIENTATION) ?: 270
+                  }.getOrDefault(270)
+                  isCapturing = true
+                  lastCaptureTime = now
                   val bgThread = HandlerThread("NowLockIntruderCam").apply { start() }
                   val bgHandler = Handler(bgThread.looper)
                   runCatching {
@@ -1584,7 +1666,7 @@ jobs:
                                   val buffer = image.planes[0].buffer
                                   val bytes = ByteArray(buffer.remaining())
                                   buffer.get(bytes)
-                                  saveJpegBytesToGallery(context, bytes, targetPkg)
+                                  saveJpegBytesToGallery(context, bytes, targetPkg, sensorOrientation)
                               }
                               runCatching { image.close() }
                           }
@@ -1592,6 +1674,7 @@ jobs:
                           runCatching { dummyTexture.release() }
                           runCatching { reader.close() }
                           runCatching { bgThread.quitSafely() }
+                          isCapturing = false
                       }, bgHandler)
                       cameraManager.openCamera(frontCameraId, object : CameraDevice.StateCallback() {
                           override fun onOpened(camera: CameraDevice) {
@@ -1612,7 +1695,7 @@ jobs:
                                                       val stillReq = camera.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE).apply {
                                                           addTarget(imageReader.surface)
                                                           set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON)
-                                                          set(CaptureRequest.JPEG_ORIENTATION, 270)
+                                                          set(CaptureRequest.JPEG_ORIENTATION, sensorOrientation)
                                                       }.build()
                                                       session.capture(stillReq, object : CameraCaptureSession.CaptureCallback() {
                                                           override fun onCaptureCompleted(
@@ -1647,13 +1730,14 @@ jobs:
                           }
                       }, bgHandler)
                   }.onFailure {
+                      isCapturing = false
                       runCatching { bgThread.quitSafely() }
                   }
               }
-              private fun saveJpegBytesToGallery(context: Context, jpegBytes: ByteArray, targetPkg: String) {
+              private fun saveJpegBytesToGallery(context: Context, jpegBytes: ByteArray, targetPkg: String, sensorOrientation: Int) {
                   val originalBmp = BitmapFactory.decodeByteArray(jpegBytes, 0, jpegBytes.size) ?: return
                   val finalBmp = if (originalBmp.width > originalBmp.height) {
-                      val matrix = Matrix().apply { postRotate(270f) }
+                      val matrix = Matrix().apply { postRotate(sensorOrientation.toFloat()) }
                       Bitmap.createBitmap(originalBmp, 0, 0, originalBmp.width, originalBmp.height, matrix, true)
                   } else {
                       originalBmp
@@ -1704,6 +1788,8 @@ jobs:
               private const val KEY_UNINSTALL = "nowlock_uninstall_protect"
               private lateinit var prefs: SharedPreferences
               private val lockedMemorySet = ConcurrentHashMap.newKeySet<String>()
+              private val dynamicHomePackages = ConcurrentHashMap.newKeySet<String>()
+              private val dynamicImePackages = ConcurrentHashMap.newKeySet<String>()
               val unlockedSession = ConcurrentHashMap.newKeySet<String>()
               val unlockTimestamps = ConcurrentHashMap<String, Long>()
               @Volatile var lastActivePackage: String = ""
@@ -1725,6 +1811,25 @@ jobs:
                       }
                       prefs = storageCtx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
                       reloadLockedPackagesFromPrefs()
+                      refreshDynamicSystemPackages(storageCtx)
+                  }
+              }
+              fun refreshDynamicSystemPackages(ctx: Context) {
+                  runCatching {
+                      val pm = ctx.packageManager
+                      val homeIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+                      pm.queryIntentActivities(homeIntent, PackageManager.MATCH_DEFAULT_ONLY).forEach { ri ->
+                          ri.activityInfo?.packageName?.let { if (it.isNotEmpty()) dynamicHomePackages.add(it) }
+                      }
+                      pm.resolveActivity(homeIntent, PackageManager.MATCH_DEFAULT_ONLY)?.activityInfo?.packageName?.let {
+                          if (it.isNotEmpty()) dynamicHomePackages.add(it)
+                      }
+                  }
+                  runCatching {
+                      val imm = ctx.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+                      imm?.enabledInputMethodList?.forEach { imi ->
+                          if (imi.packageName.isNotEmpty()) dynamicImePackages.add(imi.packageName)
+                      }
                   }
               }
               private fun reloadLockedPackagesFromPrefs() {
@@ -1753,14 +1858,16 @@ jobs:
               }
               fun verifyPin(pin: String): Boolean {
                   val saved = prefs.getString(KEY_PIN_HASH, null) ?: return false
-                  return sha256("pin_" + pin) == saved
+                  val candidate = sha256("pin_" + pin)
+                  return MessageDigest.isEqual(candidate.toByteArray(Charsets.UTF_8), saved.toByteArray(Charsets.UTF_8))
               }
               fun setPattern(patternStr: String) {
                   prefs.edit().putString(KEY_PATTERN_HASH, sha256("pat_" + patternStr)).commit()
               }
               fun verifyPattern(patternStr: String): Boolean {
                   val saved = prefs.getString(KEY_PATTERN_HASH, null) ?: return false
-                  return sha256("pat_" + patternStr) == saved
+                  val candidate = sha256("pat_" + patternStr)
+                  return MessageDigest.isEqual(candidate.toByteArray(Charsets.UTF_8), saved.toByteArray(Charsets.UTF_8))
               }
               fun getComboMode(): LockComboMode =
                   runCatching {
@@ -1855,27 +1962,54 @@ jobs:
               }
               fun isIgnoredSystemOrOverlayPackage(pkg: String, myPkg: String): Boolean {
                   if (pkg.isBlank() || pkg == myPkg || pkg == "android") return true
+                  if (dynamicImePackages.contains(pkg)) return true
                   val lower = pkg.lowercase()
+                  // Covers Samsung One UI, Xiaomi MIUI/HyperOS, OPPO/OnePlus ColorOS, Vivo OriginOS, Huawei EMUI, Pixel/AOSP
+                  // including keyboards, biometric prompts, permission controllers, incoming call screens, and floating sidebars
                   return lower.contains("systemui") ||
                       lower.contains("inputmethod") ||
                       lower.contains("keyboard") ||
                       lower.contains("honeyboard") ||
+                      lower.contains("latinime") ||
+                      lower.contains("swiftkey") ||
                       lower.contains("biometric") ||
+                      lower.contains("credentialmanager") ||
                       lower.contains("permissioncontroller") ||
-                      lower.contains("cocktailbarservice") ||
                       lower.contains("packageinstaller") ||
+                      lower.contains("incallui") ||
+                      lower.contains("server.telecom") ||
+                      lower.contains("cocktailbarservice") ||
+                      lower.contains("smartsidebar") ||
+                      lower.contains("smartmultiwindow") ||
+                      lower.contains("miui.securitycenter") ||
+                      lower.contains("miui.notification") ||
                       lower.contains("FloatingFeature".lowercase()) ||
                       lower.contains("samsung.android.app.aodservice") ||
-                      lower.contains("sec.android.app.SmartClip")
+                      lower.contains("samsung.android.app.smartcapture") ||
+                      lower.contains("sec.android.app.smartclip")
               }
               fun isHomeLauncherPackage(pkg: String): Boolean {
+                  if (lockedMemorySet.contains(pkg)) return false
+                  if (dynamicHomePackages.contains(pkg)) return true
                   val lower = pkg.lowercase()
-                  return lower.contains("launcher") ||
-                      lower.contains("miui.home") ||
-                      lower.contains("oppo.launcher") ||
-                      lower.contains("huawei.android.launcher") ||
-                      lower == "com.sec.android.app.launcher" ||
-                      lower == "com.google.android.apps.nexuslauncher"
+                  return lower == "com.sec.android.app.launcher" ||
+                      lower == "com.miui.home" ||
+                      lower == "com.mi.android.globallauncher" ||
+                      lower == "com.google.android.apps.nexuslauncher" ||
+                      lower == "com.oppo.launcher" ||
+                      lower == "com.android.launcher" ||
+                      lower == "com.android.launcher3" ||
+                      lower == "net.oneplus.launcher" ||
+                      lower == "com.huawei.android.launcher" ||
+                      lower == "com.hihonor.android.launcher" ||
+                      lower == "com.bbk.launcher2" ||
+                      lower == "com.vivo.launcher" ||
+                      lower == "com.nothing.launcher" ||
+                      lower == "com.motorola.launcher3" ||
+                      lower == "com.teslacoilsw.launcher" ||
+                      lower == "com.microsoft.launcher" ||
+                      lower.endsWith(".launcher") ||
+                      lower.endsWith(".home")
               }
               fun evaluateForegroundPackage(pkg: String, myPkg: String): Boolean {
                   // Never evaluate NowLock itself or system overlays in background services!
@@ -2311,11 +2445,24 @@ jobs:
                       val fpEnabled = AppRepo.isFingerprintEnabled() && canUseFingerprint(this)
                       var enteredPin by remember { mutableStateOf("") }
                       var failedAttempts by remember { mutableStateOf(0) }
+                      var cooldownRemainingSec by remember { mutableStateOf(0) }
                       val defaultPrompt = if (usePattern) s.lockPromptPattern else s.lockPromptPin
                       var statusMessage by remember(lang, usePattern) { mutableStateOf(defaultPrompt) }
                       var isErrorState by remember { mutableStateOf(false) }
                       var isUnlockingFade by remember { mutableStateOf(false) }
                       var telegramBiometricPulse by remember { mutableStateOf(false) }
+                      LaunchedEffect(cooldownRemainingSec) {
+                          if (cooldownRemainingSec > 0) {
+                              delay(1000L)
+                              cooldownRemainingSec--
+                              if (cooldownRemainingSec == 0) {
+                                  isErrorState = false
+                                  statusMessage = defaultPrompt
+                              } else {
+                                  statusMessage = "${s.lockWrongAttempt} (${cooldownRemainingSec}s)"
+                              }
+                          }
+                      }
                       val screenAlpha by animateFloatAsState(
                           targetValue = if (isUnlockingFade) 0f else 1f,
                           animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
@@ -2348,7 +2495,12 @@ jobs:
                           if (failedAttempts >= 3 && AppRepo.isIntruderSelfieEnabled()) {
                               AppRepo.recordIntruderAttempt(this@LockScreenActivity, targetPkg)
                           }
-                          statusMessage = s.lockWrongAttempt
+                          if (failedAttempts >= 5 && failedAttempts % 5 == 0) {
+                              cooldownRemainingSec = 15
+                              statusMessage = "${s.lockWrongAttempt} (15s)"
+                          } else {
+                              statusMessage = s.lockWrongAttempt
+                          }
                       }
                       LaunchedEffect(Unit) {
                           if (fpEnabled) {
@@ -2368,179 +2520,68 @@ jobs:
                               .fillMaxSize()
                               .alpha(screenAlpha)
                       ) {
-                          Column(
-                              modifier = Modifier
-                                  .fillMaxSize()
-                                  .windowInsetsPadding(WindowInsets.systemBars.union(WindowInsets.displayCutout))
-                                  .padding(horizontal = 24.dp, vertical = if (isCompactScreen) 12.dp else 22.dp),
-                              horizontalAlignment = Alignment.CenterHorizontally,
-                              verticalArrangement = Arrangement.SpaceBetween
-                          ) {
-                              // Clean Header: ONLY Small Padlock + Animated RGB "NowLock" (Removed big duplicate padlock and white NowLock below it!)
-                              Column(
-                                  horizontalAlignment = Alignment.CenterHorizontally,
-                                  modifier = Modifier.padding(top = if (isCompactScreen) 18.dp else 32.dp)
-                              ) {
-                                  Row(
-                                      verticalAlignment = Alignment.CenterVertically,
-                                      horizontalArrangement = Arrangement.spacedBy(10.dp)
-                                  ) {
-                                      Image(
-                                          painter = painterResource(id = R.drawable.ic_nowlock_logo),
-                                          contentDescription = "NowLock",
-                                          modifier = Modifier
-                                              .size(32.dp)
-                                              .clip(RoundedCornerShape(9.dp))
-                                      )
-                                      AnimatedRgbBrandText(
-                                          text = "NowLock",
-                                          fontSize = 24.sp
-                                      )
-                                  }
-                                  Spacer(Modifier.height(16.dp))
-                                  Text(
-                                      text = statusMessage,
-                                      color = if (isErrorState) Color(0xFFEF4444) else secondaryTextColor,
-                                      fontSize = 13.5.sp,
-                                      textAlign = TextAlign.Center
-                                  )
-                                  if (!usePattern) {
-                                      Spacer(Modifier.height(24.dp))
-                                      Row(
-                                          horizontalArrangement = Arrangement.spacedBy(18.dp),
-                                          verticalAlignment = Alignment.CenterVertically
-                                      ) {
-                                          repeat(4) { idx ->
-                                              val filled = idx < enteredPin.length
-                                              val dotScale by animateFloatAsState(
-                                                  targetValue = if (filled) 1.18f else 1.0f,
-                                                  animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
-                                                  label = "dotScale"
-                                              )
-                                              Box(
-                                                  modifier = Modifier
-                                                      .size(14.dp)
-                                                      .scale(dotScale)
-                                                      .clip(CircleShape)
-                                                      .background(
-                                                          when {
-                                                              isErrorState -> Color(0xFFEF4444)
-                                                              filled -> primaryTextColor
-                                                              else -> Color.Transparent
-                                                          }
-                                                      )
-                                                      .border(
-                                                          width = 1.5.dp,
-                                                          color = if (isErrorState) Color(0xFFEF4444) else primaryTextColor.copy(alpha = 0.55f),
-                                                          shape = CircleShape
-                                                      )
-                                              )
-                                          }
-                                      }
-                                  }
-                              }
-                              CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
-                                  if (usePattern) {
-                                      Column(
-                                          horizontalAlignment = Alignment.CenterHorizontally,
-                                          modifier = Modifier.padding(bottom = 12.dp)
-                                      ) {
-                                          InteractivePatternLockView(
-                                              gridSizeDp = if (isCompactScreen) 240 else 276,
-                                              dotColor = primaryTextColor,
-                                              lineColor = accentBlue,
-                                              errorColor = Color(0xFFEF4444),
-                                              onPatternCompleted = { patternStr, resetPatternCallback ->
-                                                  if (AppRepo.verifyPattern(patternStr)) {
-                                                      onSuccessfulUnlock()
-                                                  } else {
-                                                      onWrongAttempt()
-                                                      scope.launch {
-                                                          delay(350)
-                                                          resetPatternCallback()
-                                                          isErrorState = false
-                                                          statusMessage = defaultPrompt
-                                                      }
-                                                  }
-                                              }
-                                          )
-                                          Spacer(Modifier.height(14.dp))
-                                          Row(
-                                              modifier = Modifier
-                                                  .fillMaxWidth()
-                                                  .padding(horizontal = 24.dp),
-                                              horizontalArrangement = Arrangement.SpaceBetween,
-                                              verticalAlignment = Alignment.CenterVertically
-                                          ) {
-                                              TextButton(onClick = { navigateHomeAndClose() }) {
-                                                  Text(
-                                                      text = s.lockExitBtn,
-                                                      color = secondaryTextColor,
-                                                      fontSize = 15.sp
-                                                  )
-                                              }
-                                              if (fpEnabled) {
-                                                  TelegramFingerprintButton(
-                                                      isActivePulse = telegramBiometricPulse,
-                                                      tintColor = primaryTextColor,
-                                                      accentColor = accentBlue,
-                                                      onClick = {
-                                                          telegramBiometricPulse = true
-                                                          triggerFingerprintPrompt(
-                                                              s = s,
-                                                              onSuccess = { onSuccessfulUnlock() },
-                                                              onFailedAttempt = { onWrongAttempt() },
-                                                              onCancelOrError = { telegramBiometricPulse = false }
-                                                          )
-                                                      }
-                                                  )
-                                              }
-                                          }
-                                      }
+                          AdaptiveLockScreenBody(
+                              s = s,
+                              usePattern = usePattern,
+                              fpEnabled = fpEnabled,
+                              isFingerprintPulsing = telegramBiometricPulse,
+                              statusMessage = statusMessage,
+                              isErrorState = isErrorState,
+                              enteredPinLength = enteredPin.length,
+                              primaryTextColor = primaryTextColor,
+                              secondaryTextColor = secondaryTextColor,
+                              accentBlue = accentBlue,
+                              onPatternAttempt = { patternStr, resetPatternCallback ->
+                                  if (cooldownRemainingSec > 0) {
+                                      resetPatternCallback()
+                                  } else if (AppRepo.verifyPattern(patternStr)) {
+                                      onSuccessfulUnlock()
                                   } else {
-                                      SamsungOneUiDialpad(
-                                          isCompact = isCompactScreen,
-                                          primaryTextColor = primaryTextColor,
-                                          secondaryTextColor = secondaryTextColor,
-                                          accentColor = accentBlue,
-                                          showFingerprintKey = fpEnabled,
-                                          isFingerprintPulsing = telegramBiometricPulse,
-                                          onDigitClick = { digit ->
-                                              if (enteredPin.length < 4) {
-                                                  isErrorState = false
-                                                  enteredPin += digit.toString()
-                                                  if (enteredPin.length == 4) {
-                                                      if (AppRepo.verifyPin(enteredPin)) {
-                                                          onSuccessfulUnlock()
-                                                      } else {
-                                                          onWrongAttempt()
-                                                          scope.launch {
-                                                              delay(260)
-                                                              enteredPin = ""
-                                                          }
-                                                      }
-                                                  }
-                                              }
-                                          },
-                                          onBackspaceClick = {
-                                              if (enteredPin.isNotEmpty()) {
-                                                  isErrorState = false
-                                                  enteredPin = enteredPin.dropLast(1)
-                                              }
-                                          },
-                                          onFingerprintClick = {
-                                              telegramBiometricPulse = true
-                                              triggerFingerprintPrompt(
-                                                  s = s,
-                                                  onSuccess = { onSuccessfulUnlock() },
-                                                  onFailedAttempt = { onWrongAttempt() },
-                                                  onCancelOrError = { telegramBiometricPulse = false }
-                                              )
+                                      onWrongAttempt()
+                                      scope.launch {
+                                          delay(350)
+                                          resetPatternCallback()
+                                          if (cooldownRemainingSec == 0) {
+                                              isErrorState = false
+                                              statusMessage = defaultPrompt
                                           }
-                                      )
+                                      }
                                   }
-                              }
-                          }
+                              },
+                              onDigitClick = { digit ->
+                                  if (cooldownRemainingSec <= 0 && enteredPin.length < 4) {
+                                      isErrorState = false
+                                      enteredPin += digit.toString()
+                                      if (enteredPin.length == 4) {
+                                          if (AppRepo.verifyPin(enteredPin)) {
+                                              onSuccessfulUnlock()
+                                          } else {
+                                              onWrongAttempt()
+                                              scope.launch {
+                                                  delay(260)
+                                                  enteredPin = ""
+                                              }
+                                          }
+                                      }
+                                  }
+                              },
+                              onBackspaceClick = {
+                                  if (enteredPin.isNotEmpty()) {
+                                      isErrorState = false
+                                      enteredPin = enteredPin.dropLast(1)
+                                  }
+                              },
+                              onFingerprintClick = {
+                                  telegramBiometricPulse = true
+                                  triggerFingerprintPrompt(
+                                      s = s,
+                                      onSuccess = { onSuccessfulUnlock() },
+                                      onFailedAttempt = { onWrongAttempt() },
+                                      onCancelOrError = { telegramBiometricPulse = false }
+                                  )
+                              },
+                              onExitClick = { navigateHomeAndClose() }
+                          )
                           NotchTranslucentStatusBarOverlay(isDark = isDark)
                           GlassyNavigationBarOverlay(isDark = isDark, modifier = Modifier.align(Alignment.BottomCenter))
                       }
@@ -2608,8 +2649,204 @@ jobs:
               return bm.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.BIOMETRIC_WEAK) == BiometricManager.BIOMETRIC_SUCCESS
           }
           @Composable
+          fun AdaptiveLockScreenBody(
+              s: UiStrings,
+              usePattern: Boolean,
+              fpEnabled: Boolean,
+              isFingerprintPulsing: Boolean,
+              statusMessage: String,
+              isErrorState: Boolean,
+              enteredPinLength: Int,
+              primaryTextColor: Color,
+              secondaryTextColor: Color,
+              accentBlue: Color,
+              onPatternAttempt: (String, () -> Unit) -> Unit,
+              onDigitClick: (Int) -> Unit,
+              onBackspaceClick: () -> Unit,
+              onFingerprintClick: () -> Unit,
+              onExitClick: () -> Unit
+          ) {
+              val metrics = rememberAdaptiveScreenMetrics()
+              @Composable
+              fun HeaderAndPinDotsSection() {
+                  Column(
+                      horizontalAlignment = Alignment.CenterHorizontally,
+                      verticalArrangement = Arrangement.Center
+                  ) {
+                      Row(
+                          verticalAlignment = Alignment.CenterVertically,
+                          horizontalArrangement = Arrangement.spacedBy(10.dp)
+                      ) {
+                          Image(
+                              painter = painterResource(id = R.drawable.ic_nowlock_logo),
+                              contentDescription = "NowLock",
+                              modifier = Modifier
+                                  .size(if (metrics.isUltraShortHeight) 28.dp else 32.dp)
+                                  .clip(RoundedCornerShape(9.dp))
+                          )
+                          AnimatedRgbBrandText(
+                              text = "NowLock",
+                              fontSize = if (metrics.isUltraShortHeight) 21.sp else 24.sp
+                          )
+                      }
+                      Spacer(Modifier.height(if (metrics.isUltraShortHeight) 10.dp else 16.dp))
+                      Text(
+                          text = statusMessage,
+                          color = if (isErrorState) Color(0xFFEF4444) else secondaryTextColor,
+                          fontSize = 13.5.sp,
+                          textAlign = TextAlign.Center,
+                          modifier = Modifier.padding(horizontal = 12.dp)
+                      )
+                      if (!usePattern) {
+                          Spacer(Modifier.height(if (metrics.isUltraShortHeight) 14.dp else 24.dp))
+                          CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                              Row(
+                                  horizontalArrangement = Arrangement.spacedBy(18.dp),
+                                  verticalAlignment = Alignment.CenterVertically
+                              ) {
+                                  repeat(4) { idx ->
+                                      val filled = idx < enteredPinLength
+                                      val dotScale by animateFloatAsState(
+                                          targetValue = if (filled) 1.18f else 1.0f,
+                                          animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
+                                          label = "dotScale"
+                                      )
+                                      Box(
+                                          modifier = Modifier
+                                              .size(14.dp)
+                                              .scale(dotScale)
+                                              .clip(CircleShape)
+                                              .background(
+                                                  when {
+                                                      isErrorState -> Color(0xFFEF4444)
+                                                      filled -> primaryTextColor
+                                                      else -> Color.Transparent
+                                                  }
+                                              )
+                                              .border(
+                                                  width = 1.5.dp,
+                                                  color = if (isErrorState) Color(0xFFEF4444) else primaryTextColor.copy(alpha = 0.55f),
+                                                  shape = CircleShape
+                                              )
+                                      )
+                                  }
+                              }
+                          }
+                      }
+                  }
+              }
+              @Composable
+              fun InputPadSection() {
+                  CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                      if (usePattern) {
+                          Column(
+                              horizontalAlignment = Alignment.CenterHorizontally,
+                              modifier = Modifier.padding(bottom = if (metrics.isUltraShortHeight) 4.dp else 12.dp)
+                          ) {
+                              InteractivePatternLockView(
+                                  gridSizeDp = metrics.patternGridSizeDp,
+                                  dotColor = primaryTextColor,
+                                  lineColor = accentBlue,
+                                  errorColor = Color(0xFFEF4444),
+                                  onPatternCompleted = onPatternAttempt
+                              )
+                              Spacer(Modifier.height(if (metrics.isUltraShortHeight) 6.dp else 14.dp))
+                              Row(
+                                  modifier = Modifier
+                                      .widthIn(max = 340.dp)
+                                      .fillMaxWidth()
+                                      .padding(horizontal = 24.dp),
+                                  horizontalArrangement = Arrangement.SpaceBetween,
+                                  verticalAlignment = Alignment.CenterVertically
+                              ) {
+                                  TextButton(onClick = onExitClick) {
+                                      Text(
+                                          text = s.lockExitBtn,
+                                          color = secondaryTextColor,
+                                          fontSize = 15.sp
+                                      )
+                                  }
+                                  if (fpEnabled) {
+                                      TelegramFingerprintButton(
+                                          sizeDp = if (metrics.isUltraShortHeight) 56 else 74,
+                                          isActivePulse = isFingerprintPulsing,
+                                          tintColor = primaryTextColor,
+                                          accentColor = accentBlue,
+                                          onClick = onFingerprintClick
+                                      )
+                                  }
+                              }
+                          }
+                      } else {
+                          Box(modifier = Modifier.widthIn(max = 380.dp)) {
+                              SamsungOneUiDialpad(
+                                  isCompact = metrics.isCompactHeight,
+                                  customKeySizeDp = metrics.dialKeySizeDp,
+                                  primaryTextColor = primaryTextColor,
+                                  secondaryTextColor = secondaryTextColor,
+                                  accentColor = accentBlue,
+                                  showFingerprintKey = fpEnabled,
+                                  isFingerprintPulsing = isFingerprintPulsing,
+                                  onDigitClick = onDigitClick,
+                                  onBackspaceClick = onBackspaceClick,
+                                  onFingerprintClick = onFingerprintClick
+                              )
+                          }
+                      }
+                  }
+              }
+              Box(
+                  modifier = Modifier
+                      .fillMaxSize()
+                      .windowInsetsPadding(WindowInsets.systemBars.union(WindowInsets.displayCutout)),
+                  contentAlignment = Alignment.Center
+              ) {
+                  if (metrics.useTwoPaneLockLayout) {
+                      // 2-Pane Side-by-Side Layout for Foldable Inner Screens & Tablet/Phone Landscape Mode
+                      Row(
+                          modifier = Modifier
+                              .widthIn(max = 860.dp)
+                              .fillMaxSize()
+                              .padding(horizontal = 28.dp, vertical = 12.dp),
+                          horizontalArrangement = Arrangement.SpaceEvenly,
+                          verticalAlignment = Alignment.CenterVertically
+                      ) {
+                          Box(
+                              modifier = Modifier.weight(1f),
+                              contentAlignment = Alignment.Center
+                          ) {
+                              HeaderAndPinDotsSection()
+                          }
+                          Box(
+                              modifier = Modifier.weight(1.1f),
+                              contentAlignment = Alignment.Center
+                          ) {
+                              InputPadSection()
+                          }
+                      }
+                  } else {
+                      // Responsive Portrait Layout for Phones, Foldable Cover Screens, and Portrait Tablets
+                      Column(
+                          modifier = Modifier
+                              .widthIn(max = 460.dp)
+                              .fillMaxSize()
+                              .padding(horizontal = 24.dp, vertical = if (metrics.isCompactHeight) 10.dp else 22.dp),
+                          horizontalAlignment = Alignment.CenterHorizontally,
+                          verticalArrangement = Arrangement.SpaceBetween
+                      ) {
+                          Box(modifier = Modifier.padding(top = if (metrics.isCompactHeight) 12.dp else 28.dp)) {
+                              HeaderAndPinDotsSection()
+                          }
+                          InputPadSection()
+                      }
+                  }
+              }
+          }
+
+          @Composable
           fun SamsungOneUiDialpad(
               isCompact: Boolean = false,
+              customKeySizeDp: Int? = null,
               primaryTextColor: Color,
               secondaryTextColor: Color,
               accentColor: Color,
@@ -2624,7 +2861,7 @@ jobs:
                   listOf(Triple(4, "GHI", ""), Triple(5, "JKL", ""), Triple(6, "MNO", "")),
                   listOf(Triple(7, "PQRS", ""), Triple(8, "TUV", ""), Triple(9, "WXYZ", ""))
               )
-              val keySizeDp = if (isCompact) 72 else 82
+              val keySizeDp = customKeySizeDp ?: (if (isCompact) 72 else 82)
               Column(
                   modifier = Modifier
                       .fillMaxWidth()
@@ -2721,9 +2958,9 @@ jobs:
                       Text(
                           text = mainText,
                           color = primaryColor,
-                          fontSize = 33.sp,
+                          fontSize = if (sizeDp < 64) 24.sp else if (sizeDp < 74) 29.sp else 33.sp,
                           fontWeight = FontWeight.Normal,
-                          lineHeight = 35.sp
+                          lineHeight = if (sizeDp < 64) 26.sp else 35.sp
                       )
                       Text(
                           text = subText,
@@ -3015,6 +3252,7 @@ jobs:
               drawable.draw(canvas)
               return bitmap
           }
+          @OptIn(ExperimentalFoundationApi::class)
           class MainActivity : FragmentActivity() {
               private var hasOverlayState = mutableStateOf(false)
               private var hasAccState = mutableStateOf(false)
@@ -3133,7 +3371,8 @@ jobs:
                       var appLang by remember { mutableStateOf(AppRepo.getAppLang()) }
                       val s = getStrings(appLang)
                       val isFa = appLang.isRtl
-                      var selectedTab by remember { mutableStateOf(NowLockNavTab.APPS) }
+                      val pagerState = rememberPagerState(initialPage = 0, pageCount = { NowLockNavTab.entries.size })
+                      val selectedTab = NowLockNavTab.entries[pagerState.currentPage]
                       var comboMode by remember { mutableStateOf(AppRepo.getComboMode()) }
                       var fpEnabled by remember { mutableStateOf(AppRepo.isFingerprintEnabled()) }
                       var iconMode by remember { mutableStateOf(AppRepo.getIconMode()) }
@@ -3234,16 +3473,23 @@ jobs:
                                                   }
                                               }
                                               TabRow(
-                                                  selectedTabIndex = selectedTab.ordinal,
+                                                  selectedTabIndex = pagerState.currentPage,
                                                   containerColor = Color.Transparent,
                                                   contentColor = blue,
                                                   divider = { HorizontalDivider(color = border) }
                                               ) {
                                                   NowLockNavTab.entries.forEach { tab ->
-                                                      val isSelected = selectedTab == tab
+                                                      val isSelected = pagerState.currentPage == tab.ordinal
                                                       Tab(
                                                           selected = isSelected,
-                                                          onClick = { selectedTab = tab },
+                                                          onClick = {
+                                                              scope.launch {
+                                                                  pagerState.animateScrollToPage(
+                                                                      page = tab.ordinal,
+                                                                      animationSpec = tween(durationMillis = 320, easing = FastOutSlowInEasing)
+                                                                  )
+                                                              }
+                                                          },
                                                           text = {
                                                               Text(
                                                                   tab.getTitle(s),
@@ -3258,36 +3504,32 @@ jobs:
                                           }
                                       }
                                   ) { innerPadding ->
-                                      var dragAccum by remember { mutableStateOf(0f) }
+                                      val screenMetrics = rememberAdaptiveScreenMetrics()
                                       Box(
+                                          contentAlignment = Alignment.TopCenter,
                                           modifier = Modifier
                                               .fillMaxSize()
                                               .padding(top = innerPadding.calculateTopPadding())
-                                              .pointerInput(selectedTab, isFa) {
-                                                  detectHorizontalDragGestures(
-                                                      onDragStart = { dragAccum = 0f },
-                                                      onHorizontalDrag = { _, dragAmount ->
-                                                          dragAccum += dragAmount
-                                                      },
-                                                      onDragEnd = {
-                                                          val threshold = 85f
-                                                          val tabs = NowLockNavTab.entries
-                                                          val cur = selectedTab.ordinal
-                                                          if (dragAccum > threshold) {
-                                                              val nextIdx = if (isFa) (cur + 1).coerceAtMost(tabs.lastIndex) else (cur - 1).coerceAtLeast(0)
-                                                              selectedTab = tabs[nextIdx]
-                                                          } else if (dragAccum < -threshold) {
-                                                              val nextIdx = if (isFa) (cur - 1).coerceAtLeast(0) else (cur + 1).coerceAtMost(tabs.lastIndex)
-                                                              selectedTab = tabs[nextIdx]
-                                                          }
-                                                          dragAccum = 0f
-                                                      }
-                                                  )
-                                              }
                                       ) {
-                                          when (selectedTab) {
+                                          HorizontalPager(
+                                              state = pagerState,
+                                              modifier = Modifier.fillMaxSize()
+                                          ) { pageIdx ->
+                                              val pageOffset = ((pagerState.currentPage - pageIdx) + pagerState.currentPageOffsetFraction).let { abs(it) }.coerceIn(0f, 1f)
+                                              Box(
+                                                  contentAlignment = Alignment.TopCenter,
+                                                  modifier = Modifier
+                                                      .fillMaxSize()
+                                                      .graphicsLayer {
+                                                          alpha = 1f - (pageOffset * 0.45f)
+                                                          val scale = 1f - (pageOffset * 0.04f)
+                                                          scaleX = scale
+                                                          scaleY = scale
+                                                      }
+                                              ) {
+                                                  when (NowLockNavTab.entries[pageIdx]) {
                                               NowLockNavTab.APPS -> {
-                                                  Column(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
+                                                  Column(modifier = Modifier.widthIn(max = screenMetrics.contentMaxWidthDp.dp).fillMaxSize().padding(horizontal = 16.dp)) {
                                                       // Ultra-Compact Collapsible Permission Strip (Never takes half the screen, never disappears prematurely!)
                                                       val grantedCount = listOf(hasAccPerm, hasUsagePerm, hasOverlayPerm, hasCamPerm).count { it }
                                                       var permBarExpanded by remember(isEngineReady) { mutableStateOf(!isEngineReady) }
@@ -3514,7 +3756,7 @@ jobs:
                                               }
                                               NowLockNavTab.SETTINGS -> {
                                                   LazyColumn(
-                                                      modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
+                                                      modifier = Modifier.widthIn(max = screenMetrics.contentMaxWidthDp.dp).fillMaxSize().padding(horizontal = 16.dp),
                                                       verticalArrangement = Arrangement.spacedBy(12.dp),
                                                       contentPadding = PaddingValues(top = 14.dp, bottom = navBarBottomInset + 36.dp)
                                                   ) {
@@ -3712,7 +3954,7 @@ jobs:
                                                               HorizontalDivider(color = border)
                                                               SettingsToggleRow(
                                                                   title = s.intruderTitle,
-                                                                  subtitle = "${s.intruderSubPrefix} (${AppRepo.getIntruderCount()})",
+                                                                  subtitle = s.intruderSubPrefix,
                                                                   checked = intruderState,
                                                                   txtColor = txt,
                                                                   subColor = sub,
@@ -3833,7 +4075,7 @@ jobs:
                                               }
                                               NowLockNavTab.ABOUT -> {
                                                   LazyColumn(
-                                                      modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
+                                                      modifier = Modifier.widthIn(max = screenMetrics.contentMaxWidthDp.dp).fillMaxSize().padding(horizontal = 16.dp),
                                                       verticalArrangement = Arrangement.spacedBy(14.dp),
                                                       contentPadding = PaddingValues(top = 16.dp, bottom = navBarBottomInset + 76.dp)
                                                   ) {
@@ -3857,7 +4099,7 @@ jobs:
                                                                   )
                                                                   Spacer(Modifier.height(12.dp))
                                                                   AnimatedRgbBrandText(
-                                                                      text = "NowLock v7.7",
+                                                                      text = "NowLock v8.0",
                                                                       fontSize = 25.sp
                                                                   )
                                                                   Text(
@@ -3973,8 +4215,10 @@ jobs:
                                                               }
                                                           }
                                                       }
+                                                      }
                                                   }
                                               }
+                                          }
                                           }
                                           // Theme-Aware Bottom Subtitle Banner: "به سایت توسعه‌دهنده مراجعه کنید" + Clickable GitHub Link
                                           AnimatedVisibility(
@@ -4070,172 +4314,64 @@ jobs:
                                               .fillMaxSize()
                                               .pointerInput(Unit) { detectTapGestures {} }
                                       ) {
-                                          Column(
-                                              modifier = Modifier
-                                                  .fillMaxSize()
-                                                  .windowInsetsPadding(WindowInsets.systemBars.union(WindowInsets.displayCutout))
-                                                  .padding(horizontal = 24.dp, vertical = if (isCompactScreen) 12.dp else 22.dp),
-                                              horizontalAlignment = Alignment.CenterHorizontally,
-                                              verticalArrangement = Arrangement.SpaceBetween
-                                          ) {
-                                              Column(
-                                                  horizontalAlignment = Alignment.CenterHorizontally,
-                                                  modifier = Modifier.padding(top = if (isCompactScreen) 18.dp else 32.dp)
-                                              ) {
-                                                  Row(
-                                                      verticalAlignment = Alignment.CenterVertically,
-                                                      horizontalArrangement = Arrangement.spacedBy(10.dp)
-                                                  ) {
-                                                      Image(
-                                                          painter = painterResource(id = R.drawable.ic_nowlock_logo),
-                                                          contentDescription = "NowLock",
-                                                          modifier = Modifier
-                                                              .size(32.dp)
-                                                              .clip(RoundedCornerShape(9.dp))
-                                                      )
-                                                      AnimatedRgbBrandText(
-                                                          text = "NowLock",
-                                                          fontSize = 24.sp
-                                                      )
-                                                  }
-                                                  Spacer(Modifier.height(16.dp))
-                                                  Text(
-                                                      text = selfStatusMsg,
-                                                      color = if (selfIsError) Color(0xFFEF4444) else secondaryTextColor,
-                                                      fontSize = 13.5.sp,
-                                                      textAlign = TextAlign.Center
-                                                  )
-                                                  if (!usePattern) {
-                                                      Spacer(Modifier.height(24.dp))
-                                                      Row(
-                                                          horizontalArrangement = Arrangement.spacedBy(18.dp),
-                                                          verticalAlignment = Alignment.CenterVertically
-                                                      ) {
-                                                          repeat(4) { idx ->
-                                                              val filled = idx < selfEnteredPin.length
-                                                              Box(
-                                                                  modifier = Modifier
-                                                                      .size(14.dp)
-                                                                      .clip(CircleShape)
-                                                                      .background(
-                                                                          when {
-                                                                              selfIsError -> Color(0xFFEF4444)
-                                                                              filled -> primaryTextColor
-                                                                              else -> Color.Transparent
-                                                                          }
-                                                                      )
-                                                                      .border(
-                                                                          width = 1.5.dp,
-                                                                          color = if (selfIsError) Color(0xFFEF4444) else primaryTextColor.copy(alpha = 0.55f),
-                                                                          shape = CircleShape
-                                                                      )
-                                                              )
-                                                          }
-                                                      }
-                                                  }
-                                              }
-                                              CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
-                                                  if (usePattern) {
-                                                      Column(
-                                                          horizontalAlignment = Alignment.CenterHorizontally,
-                                                          modifier = Modifier.padding(bottom = 12.dp)
-                                                      ) {
-                                                          InteractivePatternLockView(
-                                                              gridSizeDp = if (isCompactScreen) 240 else 276,
-                                                              dotColor = primaryTextColor,
-                                                              lineColor = blue,
-                                                              errorColor = Color(0xFFEF4444),
-                                                              onPatternCompleted = { patternStr, resetPatternCallback ->
-                                                                  if (AppRepo.verifyPattern(patternStr)) {
-                                                                      onSelfUnlockSuccess()
-                                                                  } else {
-                                                                      onSelfWrongAttempt()
-                                                                      scope.launch {
-                                                                          delay(350)
-                                                                          resetPatternCallback()
-                                                                          selfIsError = false
-                                                                          selfStatusMsg = defaultPrompt
-                                                                      }
-                                                                  }
-                                                              }
-                                                          )
-                                                          Spacer(Modifier.height(14.dp))
-                                                          Row(
-                                                              modifier = Modifier
-                                                                  .fillMaxWidth()
-                                                                  .padding(horizontal = 24.dp),
-                                                              horizontalArrangement = Arrangement.SpaceBetween,
-                                                              verticalAlignment = Alignment.CenterVertically
-                                                          ) {
-                                                              TextButton(onClick = { finish() }) {
-                                                                  Text(
-                                                                      text = s.lockExitBtn,
-                                                                      color = secondaryTextColor,
-                                                                      fontSize = 15.sp
-                                                                  )
-                                                              }
-                                                              if (canFp) {
-                                                                  TelegramFingerprintButton(
-                                                                      isActivePulse = selfBioPulse,
-                                                                      tintColor = primaryTextColor,
-                                                                      accentColor = blue,
-                                                                      onClick = {
-                                                                          selfBioPulse = true
-                                                                          triggerSelfFingerprintPrompt(
-                                                                              s = s,
-                                                                              onSuccess = { onSelfUnlockSuccess() },
-                                                                              onFailedAttempt = { onSelfWrongAttempt() },
-                                                                              onCancelOrError = { selfBioPulse = false }
-                                                                          )
-                                                                      }
-                                                                  )
-                                                              }
-                                                          }
-                                                      }
+                                          AdaptiveLockScreenBody(
+                                              s = s,
+                                              usePattern = usePattern,
+                                              fpEnabled = canFp,
+                                              isFingerprintPulsing = selfBioPulse,
+                                              statusMessage = selfStatusMsg,
+                                              isErrorState = selfIsError,
+                                              enteredPinLength = selfEnteredPin.length,
+                                              primaryTextColor = primaryTextColor,
+                                              secondaryTextColor = secondaryTextColor,
+                                              accentBlue = blue,
+                                              onPatternAttempt = { patternStr, resetPatternCallback ->
+                                                  if (AppRepo.verifyPattern(patternStr)) {
+                                                      onSelfUnlockSuccess()
                                                   } else {
-                                                      SamsungOneUiDialpad(
-                                                          isCompact = isCompactScreen,
-                                                          primaryTextColor = primaryTextColor,
-                                                          secondaryTextColor = secondaryTextColor,
-                                                          accentColor = blue,
-                                                          showFingerprintKey = canFp,
-                                                          isFingerprintPulsing = selfBioPulse,
-                                                          onDigitClick = { digit ->
-                                                              if (selfEnteredPin.length < 4) {
-                                                                  selfIsError = false
-                                                                  selfEnteredPin += digit.toString()
-                                                                  if (selfEnteredPin.length == 4) {
-                                                                      if (AppRepo.verifyPin(selfEnteredPin)) {
-                                                                          onSelfUnlockSuccess()
-                                                                      } else {
-                                                                          onSelfWrongAttempt()
-                                                                          scope.launch {
-                                                                              delay(260)
-                                                                              selfEnteredPin = ""
-                                                                          }
-                                                                      }
-                                                                  }
-                                                              }
-                                                          },
-                                                          onBackspaceClick = {
-                                                              if (selfEnteredPin.isNotEmpty()) {
-                                                                  selfIsError = false
-                                                                  selfEnteredPin = selfEnteredPin.dropLast(1)
-                                                              }
-                                                          },
-                                                          onFingerprintClick = {
-                                                              selfBioPulse = true
-                                                              triggerSelfFingerprintPrompt(
-                                                                  s = s,
-                                                                  onSuccess = { onSelfUnlockSuccess() },
-                                                                  onFailedAttempt = { onSelfWrongAttempt() },
-                                                                  onCancelOrError = { selfBioPulse = false }
-                                                              )
-                                                          }
-                                                      )
+                                                      onSelfWrongAttempt()
+                                                      scope.launch {
+                                                          delay(350)
+                                                          resetPatternCallback()
+                                                          selfIsError = false
+                                                          selfStatusMsg = defaultPrompt
+                                                      }
                                                   }
-                                              }
-                                          }
+                                              },
+                                              onDigitClick = { digit ->
+                                                  if (selfEnteredPin.length < 4) {
+                                                      selfIsError = false
+                                                      selfEnteredPin += digit.toString()
+                                                      if (selfEnteredPin.length == 4) {
+                                                          if (AppRepo.verifyPin(selfEnteredPin)) {
+                                                              onSelfUnlockSuccess()
+                                                          } else {
+                                                              onSelfWrongAttempt()
+                                                              scope.launch {
+                                                                  delay(260)
+                                                                  selfEnteredPin = ""
+                                                              }
+                                                          }
+                                                      }
+                                                  }
+                                              },
+                                              onBackspaceClick = {
+                                                  if (selfEnteredPin.isNotEmpty()) {
+                                                      selfIsError = false
+                                                      selfEnteredPin = selfEnteredPin.dropLast(1)
+                                                  }
+                                              },
+                                              onFingerprintClick = {
+                                                  selfBioPulse = true
+                                                  triggerSelfFingerprintPrompt(
+                                                      s = s,
+                                                      onSuccess = { onSelfUnlockSuccess() },
+                                                      onFailedAttempt = { onSelfWrongAttempt() },
+                                                      onCancelOrError = { selfBioPulse = false }
+                                                  )
+                                              },
+                                              onExitClick = { finish() }
+                                          )
                                       }
                                   }
                                   // Recents Privacy Padlock Cover when paused in background switcher
@@ -4414,8 +4550,8 @@ jobs:
                                           "• سرویس دسترس‌پذیری و آمار مصرف (Accessibility & Usage Access): صرفاً جهت تشخیص لحظه‌ای باز شدن برنامه‌های قفل‌شده توسط کاربر استفاده می‌شود و هیچ محتوایی از صفحه نمایش خوانده یا ذخیره نمی‌گردد.\n• مجوز دوربین (Camera): تنها در صورت فعال بودن گزینه «سلفی فضول‌گیر» و پس از ۳ بار ورود رمز یا اثر انگشت اشتباه جهت ثبت تصویر در گالری خود گوشی استفاده می‌شود.",
                                       "۴. مالکیت داده‌ها و عدم ردیابی (Zero Telemetry & Ads)" to
                                           "این برنامه فاقد هرگونه ردیاب تبلیغاتی (Ad Trackers)، کتابخانه‌های تحلیل رفتار کاربر (Analytics) یا تبلیغات مزاحم است. عکس‌های ثبت‌شده توسط سیستم فضول‌گیر مستقیماً در گالری گوشی شما ذخیره شده و مدیریت یا حذف آن‌ها کاملاً در اختیار شماست.",
-                                      "۵. شرایط استفاده و بروزرسانی‌های امنیتی" to
-                                          "استفاده از NowLock به منزله پذیرش مسئولیت حفظ رمز عبور تعریف‌شده توسط کاربر است. تیم توسعه (حامد و جمینای) به صورت مستمر بروزرسانی‌های امنیتی و بهبودهای سازگاری با نسخه‌های جدید اندروید را با امضای دیجیتال یکسان منتشر می‌کنند."
+                                      "۵. مکانیسم بروزرسانی یکپارچه و امضای دیجیتال پایدار (Seamless Updates)" to
+                                          "تمامی نسخه‌های رسمی منتشرشده در مخزن گیت‌هاب پروژه با کلید رمزنگاری و امضای دیجیتال ثابت کامپایل می‌شوند؛ بنابراین هنگام نصب نسخه‌های جدید بر روی نسخه‌های قبلی، پیکربندی‌ها و لیست برنامه‌های قفل‌شده شما بدون تغییر حفظ می‌گردند."
                                   )
                               } else {
                                   listOf(
@@ -4427,8 +4563,8 @@ jobs:
                                           "• Accessibility & Usage Access: Used exclusively to detect when a protected app enters the foreground so the lock screen can be displayed immediately.\n• Camera Permission: Used only when Intruder Selfie is enabled to save a photo to your local Gallery after 3 failed password or fingerprint attempts.",
                                       "4. Zero Telemetry, Zero Ads & Full Data Ownership" to
                                           "NowLock contains no third-party analytics, no advertising SDKs, and no background telemetry. Intruder photos are stored locally in your device's Gallery under your complete control.",
-                                      "5. Terms of Use & Security Updates" to
-                                          "Users are responsible for remembering their configured PIN or Pattern. Official updates are signed with a persistent cryptographic key so updates install seamlessly without erasing your settings."
+                                      "5. Persistent Cryptographic Signature & Seamless Updates" to
+                                          "All official builds published on the project's GitHub repository are signed with a persistent cryptographic keystore, allowing you to install newer releases directly over existing versions while preserving all configured settings and locked app lists."
                                   )
                               }
                               sections.forEach { (heading, body) ->
@@ -4739,6 +4875,10 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release delete v7.7-nowlock --repo "${{ github.repository }}" --cleanup-tag --yes 2>/dev/null || true
-          gh release create v7.7-nowlock NowLock.apk --repo "${{ github.repository }}" --target "${{ github.sha }}" --title "NowLock App v7.7 (Fixed Instant Unlock + Compact Collapsible Permission Strip + Safe Admin Toggle)" --notes "فایل نصبی آماده NowLock v7.7 با رفع کامل مشکل باز نشدن قفل و حلقه تکرار قفل (افزودن محافظ ۴.۵ ثانیه‌ای پس از بازگشایی و حذف تداخل پنجره‌های پس‌زمینه)، قفل داخلی مستقیم برای خود برنامه بدون پرش صفحه، نوار مجوزهای بسیار کم‌حجم و جمع‌شونده (Collapsible)، و غیرفعالسازی خودکار ادمین هنگام خاموش کردن محافظ حذف."
+          gh release delete v8.0-nowlock --repo "${{ github.repository }}" --cleanup-tag --yes 2>/dev/null || true
+          gh release create v8.0-nowlock NowLock.apk --repo "${{ github.repository }}" --target "${{ github.sha }}" --title "NowLock v8.0 - Fluid Interactive Pager & Refined Documentation Release" --notes "## What's New in NowLock v8.0
+          - **Fluid Continuous Tab Pager**: Replaced discrete swipe switching with a continuous interactive HorizontalPager featuring real-time finger tracking, cross-fade alpha blending, and subtle scale transitions.
+          - **Refined About & Legal Documentation**: Added comprehensive engineering context regarding third-party Android security boundaries and explicit user responsibility for offline credential retention across all 5 supported languages with zero duplicate text across sections.
+          - **Adaptive Foldable & Tablet UI Engine**: Supports compact cover screens, unfolded foldable displays (2-pane side-by-side lock screen), landscape orientation, and large tablets.
+          - **Multi-OEM & Android 8–15 Compatibility**: Dynamic Home Launcher and Input Method (IME) detection across Samsung One UI, Xiaomi MIUI/HyperOS, OPPO/Realme/OnePlus ColorOS/OxygenOS, Vivo OriginOS, Huawei/Honor EMUI, and Google Pixel."
 
