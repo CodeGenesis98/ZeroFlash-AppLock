@@ -9,7 +9,7 @@ jobs:
   build-apk:
     runs-on: ubuntu-24.04
     steps:
-      - name: Generate NowLock v8.3 Project, Persistent Keystore & Icons
+      - name: Generate NowLock v9.0 Project, Persistent Keystore & Icons
         shell: python3 {0}
         run: |
           import os, base64
@@ -473,14 +473,19 @@ jobs:
           }
           android {
               namespace = "io.nowlock.app"
-              compileSdk = 34
+              val sdkDir = System.getenv("ANDROID_HOME") ?: "/usr/local/lib/android/sdk"
+              compileSdk = when {
+                  file("$sdkDir/platforms/android-36").exists() -> 36
+                  file("$sdkDir/platforms/android-35").exists() -> 35
+                  else -> 34
+              }
               defaultConfig {
                   applicationId = "io.nowlock.app"
                   minSdk = 26
-                  targetSdk = 34
+                  targetSdk = 36
                   val runNum = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
-                  versionCode = 120 + runNum
-                  versionName = "8.3-NowLock"
+                  versionCode = 130 + runNum
+                  versionName = "9.0-NowLock"
               }
               signingConfigs {
                   getByName("debug") {
@@ -603,16 +608,12 @@ jobs:
                   android:label="@string/app_name"
                   android:supportsRtl="true"
                   android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
-                  <!-- Main Activity (Also handles long-press on Control Center Quick Settings Tile) -->
+                  <!-- Main Activity (exported="false" so Android 10-16 never synthesizes a fallback icon when Launcher aliases are hidden!) -->
                   <activity
                       android:name=".MainActivity"
-                      android:exported="true"
+                      android:exported="false"
                       android:configChanges="uiMode|locale|layoutDirection|orientation|screenSize|smallestScreenSize|screenLayout|density"
-                      android:launchMode="singleTop">
-                      <intent-filter>
-                          <action android:name="android.service.quicksettings.action.QS_TILE_PREFERENCES" />
-                      </intent-filter>
-                  </activity>
+                      android:launchMode="singleTop" />
                   <!-- Default Yellow Padlock Launcher Alias -->
                   <activity-alias
                       android:name=".LauncherDefaultAlias"
@@ -735,7 +736,7 @@ jobs:
           w("app/src/main/java/io/nowlock/app/NowLockApp.kt", r'''
           package io.nowlock.app
           /*
-           * NowLock v8.3
+           * NowLock v9.0
            * Engineered by Hamed (hades.plagueis@gmail.com) & Gemini AI
            */
           import android.Manifest
@@ -813,6 +814,7 @@ jobs:
           import androidx.biometric.BiometricManager
           import androidx.biometric.BiometricPrompt
           import androidx.compose.animation.AnimatedVisibility
+          import androidx.compose.animation.animateColorAsState
           import androidx.compose.animation.core.FastOutSlowInEasing
           import androidx.compose.animation.core.LinearEasing
           import androidx.compose.animation.core.RepeatMode
@@ -861,6 +863,7 @@ jobs:
           import androidx.compose.ui.graphics.Color
           import androidx.compose.ui.graphics.ColorFilter
           import androidx.compose.ui.graphics.ImageBitmap
+          import androidx.compose.ui.graphics.Path
           import androidx.compose.ui.graphics.StrokeCap
           import androidx.compose.ui.graphics.graphicsLayer
           import androidx.compose.ui.graphics.asImageBitmap
@@ -921,7 +924,43 @@ jobs:
           data class UiStrings(
               val tabApps: String,
               val tabSettings: String,
+              val tabReport: String,
               val tabAbout: String,
+              val activeLabel: String,
+              val inactiveLabel: String,
+              val lockOnScreenOffTitle: String,
+              val lockOnScreenOffSub: String,
+              val decoySectionTitle: String,
+              val decoyToggleTitle: String,
+              val decoyToggleSub: String,
+              val btnSetDecoyPin: String,
+              val btnSetDecoyPattern: String,
+              val decoyCrashHeadline: String,
+              val decoyCloseBtn: String,
+              val decoyAppInfoBtn: String,
+              val perAppFollowGlobal: String,
+              val perAppCustom: String,
+              val repDangerTitle: String,
+              val repDangerSub: String,
+              val repWarningTitle: String,
+              val repWarningSub: String,
+              val repSafeTitle: String,
+              val repSafeSub: String,
+              val repAuditTitle: String,
+              val repQPermsDisabled: String,
+              val repQServiceStopped: String,
+              val repAnsYesDisabled: String,
+              val repAnsNoAllActive: String,
+              val repAnsYesStopped: String,
+              val repAnsNoRunning: String,
+              val repLogsTitle: String,
+              val repFailedCountLabel: String,
+              val repNoLogsMsg: String,
+              val repTargetAppLabel: String,
+              val repTimeLabel: String,
+              val repMethodLabel: String,
+              val repAutoClearNote: String,
+              val repClearNowBtn: String,
               val statusNoPassword: String,
               val statusNeedsPerm: String,
               val statusActive: String,
@@ -1024,7 +1063,43 @@ jobs:
               AppLang.FA -> UiStrings(
                   tabApps = "برنامه‌ها",
                   tabSettings = "تنظیمات",
+                  tabReport = "گزارش امنیتی",
                   tabAbout = "درباره برنامه",
+                  activeLabel = "فعال ✓",
+                  inactiveLabel = "غیرفعال",
+                  lockOnScreenOffTitle = "قفل فوری به محض قفل شدن صفحه گوشی",
+                  lockOnScreenOffSub = "حتی در حالت تاخیر زمان‌دار، با خاموش شدن صفحه نمایش همه برنامه‌ها فوراً قفل می‌شوند",
+                  decoySectionTitle = "صفحه فریب (نمایش خطای خراب شدن برنامه)",
+                  decoyToggleTitle = "فعالسازی رمز یا الگوی فریب (Fake Crash)",
+                  decoyToggleSub = "با وارد کردن رمز یا الگوی فریب، به جای باز شدن برنامه یک خطای واقعی توقف اندروید با آیکون همان برنامه نمایش داده می‌شود",
+                  btnSetDecoyPin = "تعیین پین‌کد فریب",
+                  btnSetDecoyPattern = "تعیین الگوی فریب",
+                  decoyCrashHeadline = "متأسفانه برنامه «{app}» متوقف شده است",
+                  decoyCloseBtn = "✕ بستن برنامه",
+                  decoyAppInfoBtn = "ⓘ اطلاعات برنامه",
+                  perAppFollowGlobal = "طبق تنظیمات کلی",
+                  perAppCustom = "تنظیم دستی اختصاصی",
+                  repDangerTitle = "هشدار امنیتی: مجوزها یا سرویس قفل غیرفعال است!",
+                  repDangerSub = "برای عملکرد صحیح محافظ، مجوزهای قرمز زیر را در همین صفحه فعال کنید.",
+                  repWarningTitle = "هشدار رمز عبور: تلاش ناموفق ثبت شده است!",
+                  repWarningSub = "فردی اقدام به وارد کردن رمز اشتباه کرده است؛ جزئیات در گزارش زیر درج شده است.",
+                  repSafeTitle = "سپر امنیتی در وضعیت ایده‌آل قرار دارد",
+                  repSafeSub = "تمامی مجوزها و سرویس قفل فعال هستند و هیچ خطای خوانده‌نشده‌ای وجود ندارد.",
+                  repAuditTitle = "بررسی وضعیت مجوزها و سرویس قفل",
+                  repQPermsDisabled = "آیا مجوزهای لازم غیرفعال شده‌اند؟",
+                  repQServiceStopped = "آیا سرویس قفل متوقف شده است؟",
+                  repAnsYesDisabled = "بله، نیاز به فعالسازی ⚠",
+                  repAnsNoAllActive = "خیر، هر ۴ مجوز فعالند ✓",
+                  repAnsYesStopped = "بله، متوقف شده است ✕",
+                  repAnsNoRunning = "خیر، در حال اجراست ✓",
+                  repLogsTitle = "گزارش هوشمند تلاش‌های ناموفق",
+                  repFailedCountLabel = "تعداد تلاش‌های ناموفق جدید:",
+                  repNoLogsMsg = "هیچ تلاش ناموفقی ثبت نشده است.",
+                  repTargetAppLabel = "برنامه هدف:",
+                  repTimeLabel = "زمان رخداد:",
+                  repMethodLabel = "روش تلاش:",
+                  repAutoClearNote = "نکته: این گزارش‌ها پس از مطالعه و خروج از این تب به صورت خودکار پاک می‌شوند تا انباشته نشوند.",
+                  repClearNowBtn = "✓ خوانده شد و پاکسازی گزارش‌ها",
                   statusNoPassword = "⚠ بدون رمز",
                   statusNeedsPerm = "⚠ نیاز به مجوز",
                   statusActive = "✓ محافظ فعال",
@@ -1062,7 +1137,7 @@ jobs:
                   iconCalculator = "ماشین‌حساب",
                   iconHidden = "مخفی در لیست برنامه‌ها",
                   iconHiddenHint = "در حالت مخفی، آیکون برنامه از منوی گوشی پنهان شده و از طریق شورتکات «NowLock» در کنترل‌سنتر (پنل بالای صفحه) باز می‌شود.",
-                  btnAddControlCenterTile = "افزودن شورتکات NowLock به کنترل‌سنتر گوشی",
+                  btnAddControlCenterTile = "افزودن سریع شورتکات NowLock به کنترل‌سنتر گوشی",
                   controlCenterTileToast = "از بخش ویرایش (+) در کنترل‌سنتر بالای صفحه، دکمه NowLock را اضافه کنید",
                   iconChangedToast = "وضعیت آیکون برنامه تغییر یافت",
                   secSecurityTitle = "امنیت، پس‌زمینه و عکس فضول‌گیر",
@@ -1074,7 +1149,7 @@ jobs:
                   vibrateSub = "لرزش ملایم گوشی در صورت ورود رمز یا اثر انگشت اشتباه",
                   uninstallTitle = "محافظ حذف برنامه (Uninstall Protection)",
                   uninstallSub = "جلوگیری از پاک شدن NowLock بدون وارد کردن رمز",
-                  secThemeLangTitle = "تم و زبان برنامه",
+                  secThemeLangTitle = "تم برنامه",
                   themeSystem = "خودکار سیستم",
                   themeLight = "روشن",
                   themeDark = "تاریک",
@@ -1140,7 +1215,43 @@ jobs:
               AppLang.EN -> UiStrings(
                   tabApps = "Apps",
                   tabSettings = "Settings",
+                  tabReport = "Security",
                   tabAbout = "About",
+                  activeLabel = "Active ✓",
+                  inactiveLabel = "Inactive",
+                  lockOnScreenOffTitle = "Lock Immediately When Screen Locks",
+                  lockOnScreenOffSub = "Even when using a timed delay, locking the phone screen immediately locks all apps",
+                  decoySectionTitle = "Fake Crash Decoy Mode",
+                  decoyToggleTitle = "Enable Fake Crash Decoy PIN / Pattern",
+                  decoyToggleSub = "Entering the decoy PIN or Pattern displays a realistic Android system crash dialog with the locked app's icon instead of opening the app",
+                  btnSetDecoyPin = "Set Decoy PIN",
+                  btnSetDecoyPattern = "Set Decoy Pattern",
+                  decoyCrashHeadline = "{app} keeps stopping",
+                  decoyCloseBtn = "✕ Close app",
+                  decoyAppInfoBtn = "ⓘ App info",
+                  perAppFollowGlobal = "Follow Global Settings",
+                  perAppCustom = "Custom Per-App",
+                  repDangerTitle = "Critical Alert: Permissions or Lock Service Inactive!",
+                  repDangerSub = "Enable the missing permissions below to restore full app lock protection.",
+                  repWarningTitle = "Password Alert: Failed Unlock Attempts Detected!",
+                  repWarningSub = "Unauthorized unlock attempts were recorded. Review the report below.",
+                  repSafeTitle = "Security Shield is Fully Active",
+                  repSafeSub = "All permissions and lock services are running with zero unread incidents.",
+                  repAuditTitle = "Live Service & Permission Diagnostics",
+                  repQPermsDisabled = "Are required permissions disabled?",
+                  repQServiceStopped = "Is the lock service stopped?",
+                  repAnsYesDisabled = "Yes, action needed ⚠",
+                  repAnsNoAllActive = "No, all 4 active ✓",
+                  repAnsYesStopped = "Yes, service stopped ✕",
+                  repAnsNoRunning = "No, actively running ✓",
+                  repLogsTitle = "Smart Failed Attempts Report",
+                  repFailedCountLabel = "Unread failed attempts:",
+                  repNoLogsMsg = "No failed unlock attempts recorded.",
+                  repTargetAppLabel = "Target App:",
+                  repTimeLabel = "Time Occurred:",
+                  repMethodLabel = "Auth Method:",
+                  repAutoClearNote = "Note: Once read, these logs are automatically cleared when you leave this tab so data never piles up.",
+                  repClearNowBtn = "✓ Mark as Read & Clear Now",
                   statusNoPassword = "⚠ No Password",
                   statusNeedsPerm = "⚠ Needs Permission",
                   statusActive = "✓ Guard Active",
@@ -1178,7 +1289,7 @@ jobs:
                   iconCalculator = "Calculator",
                   iconHidden = "Hide from App List",
                   iconHiddenHint = "When hidden, NowLock disappears from the launcher and can be opened anytime via the 'NowLock' Quick Settings tile in your Control Center.",
-                  btnAddControlCenterTile = "Add NowLock Shortcut to Control Center",
+                  btnAddControlCenterTile = "Quick Add NowLock Shortcut to Control Center",
                   controlCenterTileToast = "Open your phone's Control Center / Quick Settings and tap Edit (+) to add the NowLock tile",
                   iconChangedToast = "App icon mode updated",
                   secSecurityTitle = "Security, Recents & Intruder Guard",
@@ -1256,7 +1367,43 @@ jobs:
               AppLang.AZ -> UiStrings(
                   tabApps = "برنامه‌لر",
                   tabSettings = "تنظیمات",
+                  tabReport = "امنیت گزارشی",
                   tabAbout = "برنامه باره‌سینده",
+                  activeLabel = "فعّال ✓",
+                  inactiveLabel = "غیرفعّال",
+                  lockOnScreenOffTitle = "تئلفون قفل اولان کیمی فوری قفل ائله",
+                  lockOnScreenOffSub = "حتی زمانلی تاخیر حالتینده ده، صفحه خاموش اولان کیمی برنامه‌لر فوری قفل اولور",
+                  decoySectionTitle = "فریب صفحه‌سی (برنامه‌نین خراب اولماق خطاسی)",
+                  decoyToggleTitle = "فریب رمزی و الگوسون فعّال ائله (Fake Crash)",
+                  decoyToggleSub = "فریب رمزی وورولاندا، برنامه یئرینه اندرویدین واقعی توقف خطاسی همن برنامه‌نین آیکونویلا گؤرسنیر",
+                  btnSetDecoyPin = "فریب پین‌کدو قوی",
+                  btnSetDecoyPattern = "فریب الگوسو قوی",
+                  decoyCrashHeadline = "«{app}» برنامه‌سی متوقف اولدو",
+                  decoyCloseBtn = "✕ برنامه‌نی باغلا",
+                  decoyAppInfoBtn = "ⓘ برنامه اطلاعاتی",
+                  perAppFollowGlobal = "کلی تنظیمات کیمی",
+                  perAppCustom = "اختصاصی دستی تنظیم",
+                  repDangerTitle = "خطر هشداری: ایجازه‌لر یا قفل سرویسی غیرفعّالدی!",
+                  repDangerSub = "محافظین ایشلمه‌سی اوچون آشاغیداکی ایجازه‌لری فعّال ائلیین.",
+                  repWarningTitle = "رمز هشداری: ناموفق تلاش ثبت اولونوب!",
+                  repWarningSub = "ایشتباه رمز وورولوب؛ جزئیات آشاغیداکی گزارشده یازیلیب.",
+                  repSafeTitle = "امنیت سپری تام فعّال وضعیتده‌دیر",
+                  repSafeSub = "بؤتون ایجازه‌لر و قفل سرویسی ایشلییر و هئچ بیر خطا یوخدور.",
+                  repAuditTitle = "ایجازه‌لر و قفل سرویسی‌نین وضعیتی",
+                  repQPermsDisabled = "لازیم اولان ایجازه‌لر غیرفعّال اولوبمو؟",
+                  repQServiceStopped = "قفل سرویسی دایانیبمی (متوقف اولوب)؟",
+                  repAnsYesDisabled = "بَلی، فعّال ائلیین ⚠",
+                  repAnsNoAllActive = "یوخ، ۴ ایجازه فعّالدی ✓",
+                  repAnsYesStopped = "بَلی، دایانیب ✕",
+                  repAnsNoRunning = "یوخ، ایشلییر ✓",
+                  repLogsTitle = "ناموفق تلاشی‌لرین هوشمند گزارشی",
+                  repFailedCountLabel = "تازه ناموفق تلاشی‌لرین سایی:",
+                  repNoLogsMsg = "هئچ بیر ناموفق تلاش ثبت اولونماییب.",
+                  repTargetAppLabel = "هدف برنامه:",
+                  repTimeLabel = "واختی:",
+                  repMethodLabel = "روش:",
+                  repAutoClearNote = "نکته: بو گزارشلر اوخوناندان سونرا تب‌دن چیخان کیمی اوتومات پاک اولور تا اوست-اوسته ییغیلماسین.",
+                  repClearNowBtn = "✓ اوخودوم و گزارشی پاک ائله",
                   statusNoPassword = "⚠ رمزسیز",
                   statusNeedsPerm = "⚠ ایجازه لازیمدی",
                   statusActive = "✓ محافظ فعّالدی",
@@ -1294,7 +1441,7 @@ jobs:
                   iconCalculator = "ماشین‌حساب",
                   iconHidden = "برنامه‌لر لیستیندن گیزلت",
                   iconHiddenHint = "گیزلی حالتده، برنامه منودان گیزلنیر و تئلفونون کنترل‌سنترینده‌کی «NowLock» دوگمه‌سی‌نن آچیلیر.",
-                  btnAddControlCenterTile = "NowLock شورتکاتین کنترل‌سنتره اضافه ائله",
+                  btnAddControlCenterTile = "NowLock شورتکاتین کنترل‌سنتره سریع اضافه ائله",
                   controlCenterTileToast = "تئلفونون کنترل‌سنترینده ویرایش (+) بؤلمه‌سیندن NowLock دوگمه‌سین اضافه ائلیین",
                   iconChangedToast = "برنامه آیکونون وضعیتی دییشیلدی",
                   secSecurityTitle = "امنیت، پس‌زمینه و فضول‌گیر سلفی",
@@ -1306,7 +1453,7 @@ jobs:
                   vibrateSub = "رمز یا بارماق ایزی ایشتباه اولاندا تئلفون یومشاق ویبره وورور",
                   uninstallTitle = "برنامه‌نین پاک اولماسیندان محافظت",
                   uninstallSub = "رمزسیز NowLock برنامه‌سی‌نین پاک اولماغی‌نین قاباغین آل",
-                  secThemeLangTitle = "تم و برنامه‌نین دیلی",
+                  secThemeLangTitle = "برنامه‌نین تمی",
                   themeSystem = "سیستم‌نن اوتومات",
                   themeLight = "ایشیقلی (روشن)",
                   themeDark = "تاریک (قارانلیق)",
@@ -1372,7 +1519,43 @@ jobs:
               AppLang.LOR -> UiStrings(
                   tabApps = "برنامیا",
                   tabSettings = "سامونیا",
+                  tabReport = "گزارش امنیتی",
                   tabAbout = "دباره برنامه",
+                  activeLabel = "فعال ✓",
+                  inactiveLabel = "غیرفعال",
+                  lockOnScreenOffTitle = "قفل فوری وا خاموش بیئن صفحه گوشی",
+                  lockOnScreenOffSub = "حتی من حالت تاخیر زمان‌دار، وا قفل بیئن گوشی همه برنامیا فوری قفل میبون",
+                  decoySectionTitle = "صفحه فریب (نشون دئن خطای خرابی برنامه)",
+                  decoyToggleTitle = "فعالسازی رمز یا الگوی فریب (Fake Crash)",
+                  decoyToggleSub = "وا زئن رمز فریب، وه جای برنامه یه خطای واقعی اندروید وا آیکون همو برنامه نشون داده میبو",
+                  btnSetDecoyPin = "نهائن پین‌کد فریب",
+                  btnSetDecoyPattern = "نهائن الگوی فریب",
+                  decoyCrashHeadline = "برنامه «{app}» متوقف بیه",
+                  decoyCloseBtn = "✕ بستن برنامه",
+                  decoyAppInfoBtn = "ⓘ اطلاعات برنامه",
+                  perAppFollowGlobal = "طبق سامونیا کلی",
+                  perAppCustom = "سامون دستی اختصاصی",
+                  repDangerTitle = "هشدار خطر: مجوزیا یا سرویس قفل غیرفعاله!",
+                  repDangerSub = "سی کار کردن محافظ، مجوزیا زیر نه فعال بکید.",
+                  repWarningTitle = "هشدار رمز: تلاش ناموفق ثبت بیه!",
+                  repWarningSub = "یکی رمز اشتوا زئه؛ جزئیات من گزارش زیر هسه.",
+                  repSafeTitle = "سپر امنیتی من بهترین حالته",
+                  repSafeSub = "همه مجوزیا و سرویس قفل فعالن و هیچ خطایی نیسی.",
+                  repAuditTitle = "بررسی وضعیت مجوزیا و سرویس قفل",
+                  repQPermsDisabled = "آیا مجوزیا لازم غیرفعال بینه؟",
+                  repQServiceStopped = "آیا سرویس قفل متوقف بیه؟",
+                  repAnsYesDisabled = "بلی، غیرفعاله ⚠",
+                  repAnsNoAllActive = "نه، هر ۴ مجوز فعالن ✓",
+                  repAnsYesStopped = "بلی، متوقف بیه ✕",
+                  repAnsNoRunning = "نه، هان کار میکنه ✓",
+                  repLogsTitle = "گزارش هوشمند تلاش‌یا ناموفق",
+                  repFailedCountLabel = "تعداد تلاش‌یا ناموفق:",
+                  repNoLogsMsg = "هیچ تلاش ناموفقی ثبت نبیه.",
+                  repTargetAppLabel = "برنامه هدف:",
+                  repTimeLabel = "زمان:",
+                  repMethodLabel = "روش:",
+                  repAutoClearNote = "نکته: ای گزارش‌یا بعد د خوندن و در اومئن د ای تب خودکار پاک میبون تا جمع نبون.",
+                  repClearNowBtn = "✓ خوندم و پاک کردن گزارش",
                   statusNoPassword = "⚠ بی رمز",
                   statusNeedsPerm = "⚠ مجوز میخا",
                   statusActive = "✓ محافظ فعاله",
@@ -1410,7 +1593,7 @@ jobs:
                   iconCalculator = "ماشین‌حساب",
                   iconHidden = "قایم کردن د لیست برنامیا",
                   iconHiddenHint = "من حالت قایم، آیکون برنامه د صفحه گوشی پاک میبو و وا دکمه «NowLock» من کنترل‌سنتر بالای گوشی واز میبو.",
-                  btnAddControlCenterTile = "اضاف کردن شورتکات NowLock وه کنترل‌سنتر",
+                  btnAddControlCenterTile = "اضاف کردن سریع شورتکات NowLock وه کنترل‌سنتر",
                   controlCenterTileToast = "من کنترل‌سنتر بالای گوشی رو دکمه ویرایش (+) بزنیت و دکمه NowLock نه اضاف بکید",
                   iconChangedToast = "وضعیت آیکون برنامه آلشت بی",
                   secSecurityTitle = "امنیت، پس‌زمینه و عکس فضول‌گیر",
@@ -1422,7 +1605,7 @@ jobs:
                   vibrateSub = "لرزش گوشی موقع زئن رمز یا اثر کلک اشتوا",
                   uninstallTitle = "محافظ پاک کردن برنامه (Uninstall Protection)",
                   uninstallSub = "نهاشتن پاک بیئن NowLock بی زئن رمز",
-                  secThemeLangTitle = "تم و زون برنامه",
+                  secThemeLangTitle = "تم برنامه",
                   themeSystem = "سیستم",
                   themeLight = "روشن",
                   themeDark = "تاریک",
@@ -1488,7 +1671,43 @@ jobs:
               AppLang.MAZ -> UiStrings(
                   tabApps = "برنامه‌ئون",
                   tabSettings = "تنظیمات",
+                  tabReport = "امنیتی گزارش",
                   tabAbout = "برنامه خوری",
+                  activeLabel = "فعال ✓",
+                  inactiveLabel = "غیرفعال",
+                  lockOnScreenOffTitle = "گوشی صفحه خاموش بَیّن جا فوری قفل بوو",
+                  lockOnScreenOffSub = "حتی زمان‌دار تاخیر حالت دله، صفحه قفل بَیّن جا همه برنامه‌ئون فوری قفل وونّه",
+                  decoySectionTitle = "فریب صفحه (برنامه خراب بَیّن خطا)",
+                  decoyToggleTitle = "فریب رمز یا الگو ره فعال هاکردن (Fake Crash)",
+                  decoyToggleSub = "فریب رمز بزوئن جا، برنامه وا بَیّن بَدل، اندروید واقعی خطا همونتا برنامه آیکون جا سراق هادا وونه",
+                  btnSetDecoyPin = "فریب پین‌کد بی‌یشتن",
+                  btnSetDecoyPattern = "فریب الگو بی‌یشتن",
+                  decoyCrashHeadline = "«{app}» برنامه متوقف بَیّه",
+                  decoyCloseBtn = "✕ برنامه دَوِستن",
+                  decoyAppInfoBtn = "ⓘ برنامه اطلاعات",
+                  perAppFollowGlobal = "کلی تنظیمات واری",
+                  perAppCustom = "دستی اختصاصی تنظیم",
+                  repDangerTitle = "خطر هشدار: مجوزون یا قفل سرویس غیرفعاله!",
+                  repDangerSub = "محافظ کار هاکردن وسّه، بنه مجوزون ره فعال هاکنین.",
+                  repWarningTitle = "رمز هشدار: ناموفق تلاش ثبت بَیّه!",
+                  repWarningSub = "اشتباه رمز بزو بَیّه؛ جزئیات بنه گزارش دله دره.",
+                  repSafeTitle = "امنیتی سپر کامل فعال دره",
+                  repSafeSub = "همه مجوزون و قفل سرویس فعال هسنه و هیچ خطایی دنی‌یه.",
+                  repAuditTitle = "مجوزون و قفل سرویس وضعیت",
+                  repQPermsDisabled = "لازم مجوزون غیرفعال بَینه؟",
+                  repQServiceStopped = "قفل سرویس متوقف بَیّه؟",
+                  repAnsYesDisabled = "اَره، غیرفعاله ⚠",
+                  repAnsNoAllActive = "نا، هر ۴ تا فعاله ✓",
+                  repAnsYesStopped = "اَره، متوقف بَیّه ✕",
+                  repAnsNoRunning = "نا، کار کنده ✓",
+                  repLogsTitle = "ناموفق تلاش‌ئون هوشمند گزارش",
+                  repFailedCountLabel = "ناموفق تلاش‌ئون تعداد:",
+                  repNoLogsMsg = "هیچ ناموفق تلاشی ثبت نَیّه.",
+                  repTargetAppLabel = "هدف برنامه:",
+                  repTimeLabel = "زمان:",
+                  repMethodLabel = "روش:",
+                  repAutoClearNote = "نکته: اینتا گزارش‌ئون بخوندستن په، تب جا بیرون بوردن موقع خودکار پاک وونّه تا جمع نَوون.",
+                  repClearNowBtn = "✓ بخوندستمه و گزارش پاک هاکردن",
                   statusNoPassword = "⚠ بی رمز",
                   statusNeedsPerm = "⚠ مجوز خانه",
                   statusActive = "✓ محافظ فعاله",
@@ -1526,7 +1745,7 @@ jobs:
                   iconCalculator = "ماشین‌حساب",
                   iconHidden = "برنامه‌ئون لیست جا مخفی هاکردن",
                   iconHiddenHint = "مخفی حالت دله، برنامه آیکون منو جا شونه و کنترل‌سنتر دله «NowLock» شورتکات جا وا وونه.",
-                  btnAddControlCenterTile = "NowLock شورتکات ره کنترل‌سنتر دله بی‌یشتن",
+                  btnAddControlCenterTile = "NowLock شورتکات ره سریع کنترل‌سنتر دله بی‌یشتن",
                   controlCenterTileToast = "کنترل‌سنتر ویرایش (+) دله جا NowLock دکمه ره اضافه هاکنین",
                   iconChangedToast = "برنامه آیکون حالت عوض بَیّه",
                   secSecurityTitle = "امنیت، پس‌زمینه و فضول‌گیر عکس",
@@ -1538,7 +1757,7 @@ jobs:
                   vibrateSub = "غلط رمز یا انگشت اثر زوئن گدر گوشی بلرزه",
                   uninstallTitle = "پاک بَیّن محافظ (Uninstall Protection)",
                   uninstallSub = "نَیله NowLock ره بی رمز پاک هاکنن",
-                  secThemeLangTitle = "برنامه تم و زوون",
+                  secThemeLangTitle = "برنامه تم",
                   themeSystem = "سیستم",
                   themeLight = "روشن",
                   themeDark = "تاریک",
@@ -1608,8 +1827,7 @@ jobs:
           }
           enum class AppIconMode {
               PADLOCK,
-              CALCULATOR,
-              HIDDEN
+              CALCULATOR
           }
           enum class RelockDelayOption(val minutes: Int) {
               IMMEDIATE(0),
@@ -1628,13 +1846,31 @@ jobs:
           enum class NowLockNavTab {
               APPS,
               SETTINGS,
+              REPORT,
               ABOUT;
               fun getTitle(s: UiStrings): String = when (this) {
                   APPS -> s.tabApps
                   SETTINGS -> s.tabSettings
+                  REPORT -> s.tabReport
                   ABOUT -> s.tabAbout
               }
           }
+          data class SecurityLogEntry(
+              val timestamp: String,
+              val targetPkg: String,
+              val targetAppLabel: String,
+              val method: String
+          )
+          data class PerAppLockConfig(
+              val useCustom: Boolean = false,
+              val comboMode: LockComboMode = LockComboMode.PIN_FINGERPRINT,
+              val fpEnabled: Boolean = true,
+              val relockMinutes: Int = 0,
+              val lockOnScreenOff: Boolean = true,
+              val intruderSelfie: Boolean = true,
+              val vibrateOnError: Boolean = true,
+              val decoyCrashEnabled: Boolean = true
+          )
           enum class AppFilterMode {
               ALL,
               LOCKED,
@@ -2305,8 +2541,14 @@ jobs:
               private const val KEY_INTRUDER = "nowlock_intruder_selfie"
               private const val KEY_INTRUDER_COUNT = "nowlock_intruder_count"
               private const val KEY_UNINSTALL = "nowlock_uninstall_protect"
-              private const val KEY_CONSEC_FAILS = "nowlock_consec_fails"
+                  private const val KEY_CONSEC_FAILS = "nowlock_consec_fails"
               private const val KEY_LOCKOUT_UNTIL_MS = "nowlock_lockout_until_ms"
+              private const val KEY_LAUNCHER_HIDDEN = "nowlock_launcher_hidden_v90"
+              private const val KEY_LOCK_ON_SCREEN_OFF = "nowlock_lock_on_screen_off_v90"
+              private const val KEY_DECOY_ENABLED = "nowlock_decoy_enabled_v90"
+              private const val KEY_DECOY_PIN_HASH = "nowlock_decoy_pin_hash_v90"
+              private const val KEY_DECOY_PATTERN_HASH = "nowlock_decoy_pat_hash_v90"
+              private const val KEY_SEC_LOGS = "nowlock_security_logs_v90"
               private lateinit var prefs: SharedPreferences
               private val lockedMemorySet = ConcurrentHashMap.newKeySet<String>()
               private val dynamicHomePackages = ConcurrentHashMap.newKeySet<String>()
@@ -2347,10 +2589,12 @@ jobs:
               // Attempts 1..9: no timer.
               // Attempt 10: 15s lockout.
               // Every consecutive wrong attempt after 10 (11, 12, 13...): adds +5s (20s, 25s, 30s...)!
-              fun registerWrongCredentialAttempt(ctx: Context, targetPkg: String): Pair<Int, Int> {
+              fun registerWrongCredentialAttempt(ctx: Context, targetPkg: String, methodLabel: String = "PIN"): Pair<Int, Int> {
                   val fails = getConsecutiveFailedAttempts() + 1
                   prefs.edit().putInt(KEY_CONSEC_FAILS, fails).commit()
-                  if (fails >= 3 && isIntruderSelfieEnabled()) {
+                  appendSecurityLog(ctx, targetPkg, methodLabel)
+                  val effCfg = getEffectiveConfig(targetPkg)
+                  if (fails >= 3 && effCfg.intruderSelfie) {
                       recordIntruderAttempt(ctx, targetPkg)
                   }
                   if (fails >= 10) {
@@ -2360,6 +2604,120 @@ jobs:
                       return fails to penaltySec
                   }
                   return fails to 0
+              }
+              fun appendSecurityLog(ctx: Context, targetPkg: String, method: String) {
+                  val pkg = if (targetPkg.isBlank()) ctx.packageName else targetPkg
+                  val label = runCatching {
+                      if (pkg == ctx.packageName) "NowLock"
+                      else {
+                          val ai = ctx.packageManager.getApplicationInfo(pkg, 0)
+                          ctx.packageManager.getApplicationLabel(ai).toString()
+                      }
+                  }.getOrDefault(pkg)
+                  val ts = SimpleDateFormat("yyyy/MM/dd HH:mm:ss", Locale.US).format(Date())
+                  val entryLine = "$ts|||$pkg|||$label|||$method"
+                  val currentRaw = prefs.getString(KEY_SEC_LOGS, "") ?: ""
+                  val lines = currentRaw.lines().filter { it.contains("|||") }.toMutableList()
+                  lines.add(0, entryLine)
+                  val trimmed = lines.take(40).joinToString("\n")
+                  prefs.edit().putString(KEY_SEC_LOGS, trimmed).commit()
+              }
+              fun getSecurityLogs(): List<SecurityLogEntry> {
+                  val raw = prefs.getString(KEY_SEC_LOGS, "") ?: ""
+                  if (raw.isBlank()) return emptyList()
+                  return raw.lines().mapNotNull { line ->
+                      val parts = line.split("|||")
+                      if (parts.size >= 4) {
+                          SecurityLogEntry(
+                              timestamp = parts[0],
+                              targetPkg = parts[1],
+                              targetAppLabel = parts[2],
+                              method = parts[3]
+                          )
+                      } else null
+                  }
+              }
+              fun clearSecurityLogs() {
+                  prefs.edit().putString(KEY_SEC_LOGS, "").commit()
+              }
+              fun isLockOnScreenOffEnabled(): Boolean = prefs.getBoolean(KEY_LOCK_ON_SCREEN_OFF, true)
+              fun setLockOnScreenOffEnabled(enabled: Boolean) {
+                  prefs.edit().putBoolean(KEY_LOCK_ON_SCREEN_OFF, enabled).commit()
+              }
+              fun isDecoyEnabled(): Boolean = prefs.getBoolean(KEY_DECOY_ENABLED, false)
+              fun setDecoyEnabled(enabled: Boolean) {
+                  prefs.edit().putBoolean(KEY_DECOY_ENABLED, enabled).commit()
+              }
+              fun isDecoyPinSet(): Boolean = prefs.getString(KEY_DECOY_PIN_HASH, null) != null
+              fun isDecoyPatternSet(): Boolean = prefs.getString(KEY_DECOY_PATTERN_HASH, null) != null
+              fun setDecoyPin(pin: String) {
+                  prefs.edit().putString(KEY_DECOY_PIN_HASH, sha256("decoy_pin_" + pin)).putBoolean(KEY_DECOY_ENABLED, true).commit()
+              }
+              fun verifyDecoyPin(pin: String): Boolean {
+                  if (!isDecoyEnabled()) return false
+                  val saved = prefs.getString(KEY_DECOY_PIN_HASH, null) ?: return false
+                  val candidate = sha256("decoy_pin_" + pin)
+                  return MessageDigest.isEqual(candidate.toByteArray(Charsets.UTF_8), saved.toByteArray(Charsets.UTF_8))
+              }
+              fun setDecoyPattern(pat: String) {
+                  prefs.edit().putString(KEY_DECOY_PATTERN_HASH, sha256("decoy_pat_" + pat)).putBoolean(KEY_DECOY_ENABLED, true).commit()
+              }
+              fun verifyDecoyPattern(pat: String): Boolean {
+                  if (!isDecoyEnabled()) return false
+                  val saved = prefs.getString(KEY_DECOY_PATTERN_HASH, null) ?: return false
+                  val candidate = sha256("decoy_pat_" + pat)
+                  return MessageDigest.isEqual(candidate.toByteArray(Charsets.UTF_8), saved.toByteArray(Charsets.UTF_8))
+              }
+              fun getPerAppConfig(pkg: String): PerAppLockConfig {
+                  val raw = prefs.getString("per_app_cfg_$pkg", null) ?: return PerAppLockConfig(
+                      useCustom = false,
+                      comboMode = getComboMode(),
+                      fpEnabled = isFingerprintEnabled(),
+                      relockMinutes = getRelockDelayMinutes(),
+                      lockOnScreenOff = isLockOnScreenOffEnabled(),
+                      intruderSelfie = isIntruderSelfieEnabled(),
+                      vibrateOnError = isVibrationEnabled(),
+                      decoyCrashEnabled = isDecoyEnabled()
+                  )
+                  return runCatching {
+                      val p = raw.split("|")
+                      PerAppLockConfig(
+                          useCustom = p[0].toBoolean(),
+                          comboMode = LockComboMode.valueOf(p[1]),
+                          fpEnabled = p[2].toBoolean(),
+                          relockMinutes = p[3].toInt(),
+                          lockOnScreenOff = p[4].toBoolean(),
+                          intruderSelfie = p[5].toBoolean(),
+                          vibrateOnError = p[6].toBoolean(),
+                          decoyCrashEnabled = p.getOrNull(7)?.toBoolean() ?: isDecoyEnabled()
+                      )
+                  }.getOrDefault(PerAppLockConfig())
+              }
+              fun savePerAppConfig(pkg: String, cfg: PerAppLockConfig) {
+                  val serialized = listOf(
+                      cfg.useCustom,
+                      cfg.comboMode.name,
+                      cfg.fpEnabled,
+                      cfg.relockMinutes,
+                      cfg.lockOnScreenOff,
+                      cfg.intruderSelfie,
+                      cfg.vibrateOnError,
+                      cfg.decoyCrashEnabled
+                  ).joinToString("|")
+                  prefs.edit().putString("per_app_cfg_$pkg", serialized).commit()
+              }
+              fun getEffectiveConfig(pkg: String): PerAppLockConfig {
+                  val c = getPerAppConfig(pkg)
+                  return if (c.useCustom) c else PerAppLockConfig(
+                      useCustom = false,
+                      comboMode = getComboMode(),
+                      fpEnabled = isFingerprintEnabled(),
+                      relockMinutes = getRelockDelayMinutes(),
+                      lockOnScreenOff = isLockOnScreenOffEnabled(),
+                      intruderSelfie = isIntruderSelfieEnabled(),
+                      vibrateOnError = isVibrationEnabled(),
+                      decoyCrashEnabled = isDecoyEnabled()
+                  )
               }
               fun resetFailedAttempts() {
                   if (prefs.getInt(KEY_CONSEC_FAILS, 0) != 0 || prefs.getLong(KEY_LOCKOUT_UNTIL_MS, 0L) != 0L) {
@@ -2493,24 +2851,31 @@ jobs:
                   appPaletteCache[key] = extracted
                   return extracted
               }
+              fun isLauncherHidden(): Boolean = prefs.getBoolean(KEY_LAUNCHER_HIDDEN, false)
+              fun setLauncherHidden(ctx: Context, hidden: Boolean) {
+                  prefs.edit().putBoolean(KEY_LAUNCHER_HIDDEN, hidden).commit()
+                  applyLauncherAliasesState(ctx)
+              }
               fun setIconMode(ctx: Context, mode: AppIconMode) {
                   prefs.edit().putString(KEY_ICON_MODE, mode.name).commit()
+                  applyLauncherAliasesState(ctx)
+              }
+              fun applyLauncherAliasesState(ctx: Context) {
                   val pm = ctx.packageManager
                   val defaultAlias = ComponentName(ctx, "io.nowlock.app.LauncherDefaultAlias")
                   val calcAlias = ComponentName(ctx, "io.nowlock.app.LauncherCalculatorAlias")
-                  when (mode) {
-                      AppIconMode.PADLOCK -> {
+                  if (isLauncherHidden()) {
+                      // Both launcher aliases disabled + MainActivity is exported=false -> 0 exported launcher activities, so icon 100% vanishes from launcher!
+                      pm.setComponentEnabledSetting(defaultAlias, PackageManager.COMPONENT_ENABLED_STATE_DISABLED, PackageManager.DONT_KILL_APP)
+                      pm.setComponentEnabledSetting(calcAlias, PackageManager.COMPONENT_ENABLED_STATE_DISABLED, PackageManager.DONT_KILL_APP)
+                  } else {
+                      val mode = getIconMode()
+                      if (mode == AppIconMode.PADLOCK) {
                           pm.setComponentEnabledSetting(defaultAlias, PackageManager.COMPONENT_ENABLED_STATE_ENABLED, PackageManager.DONT_KILL_APP)
                           pm.setComponentEnabledSetting(calcAlias, PackageManager.COMPONENT_ENABLED_STATE_DISABLED, PackageManager.DONT_KILL_APP)
-                      }
-                      AppIconMode.CALCULATOR -> {
+                      } else {
                           pm.setComponentEnabledSetting(calcAlias, PackageManager.COMPONENT_ENABLED_STATE_ENABLED, PackageManager.DONT_KILL_APP)
                           pm.setComponentEnabledSetting(defaultAlias, PackageManager.COMPONENT_ENABLED_STATE_DISABLED, PackageManager.DONT_KILL_APP)
-                      }
-                      AppIconMode.HIDDEN -> {
-                          // Disable both launcher aliases so NowLock disappears from the app drawer, while MainActivity remains launchable from the Control Center Quick Tile!
-                          pm.setComponentEnabledSetting(defaultAlias, PackageManager.COMPONENT_ENABLED_STATE_DISABLED, PackageManager.DONT_KILL_APP)
-                          pm.setComponentEnabledSetting(calcAlias, PackageManager.COMPONENT_ENABLED_STATE_DISABLED, PackageManager.DONT_KILL_APP)
                       }
                   }
               }
@@ -2549,7 +2914,7 @@ jobs:
                       unlockedSession.add(pkg)
                       return true
                   }
-                  val delayMin = getRelockDelayMinutes()
+                  val delayMin = getEffectiveConfig(pkg).relockMinutes
                   if (delayMin <= 0) {
                       return unlockedSession.contains(pkg)
                   }
@@ -2563,10 +2928,22 @@ jobs:
                   return valid
               }
               fun clearAllUnlockedSessionsOnScreenOff() {
-                  if (getRelockDelayMinutes() <= 0) {
+                  if (getRelockDelayMinutes() <= 0 || isLockOnScreenOffEnabled()) {
+                      val allLocked = getLockedPackages()
+                      allLocked.forEach { pkg ->
+                          prefs.edit().putLong("unlock_ts_$pkg", 0L).commit()
+                      }
                       unlockedSession.clear()
                       unlockTimestamps.clear()
                       lastActivePackage = ""
+                  } else {
+                      // Check per-app lockOnScreenOff overrides
+                      val toLock = getLockedPackages().filter { getEffectiveConfig(it).lockOnScreenOff }
+                      toLock.forEach { pkg ->
+                          unlockedSession.remove(pkg)
+                          unlockTimestamps.remove(pkg)
+                          prefs.edit().putLong("unlock_ts_$pkg", 0L).commit()
+                      }
                   }
               }
               fun isIgnoredSystemOrOverlayPackage(pkg: String, myPkg: String): Boolean {
@@ -3099,10 +3476,12 @@ jobs:
                       val primaryTextColor = Color(0xFFF8FAFC)
                       val secondaryTextColor = Color(0xFFD8DEE9)
                       val accentBlue = Color(0xFF6EE7B7)
-                      val comboMode = AppRepo.getComboMode()
+                      val effCfg = remember(targetPkg) { AppRepo.getEffectiveConfig(targetPkg) }
+                      val comboMode = effCfg.comboMode
                       val usePattern = (comboMode == LockComboMode.PATTERN_FINGERPRINT && AppRepo.isPatternSet()) ||
                           (!AppRepo.isPinSet() && AppRepo.isPatternSet())
-                      val fpEnabled = AppRepo.isFingerprintEnabled() && canUseFingerprint(this)
+                      val fpEnabled = effCfg.fpEnabled && canUseFingerprint(this)
+                      var isShowingFakeCrash by remember { mutableStateOf(false) }
                       var enteredPin by remember { mutableStateOf("") }
                       var cooldownRemainingSec by remember { mutableStateOf(AppRepo.getLockoutRemainingSeconds()) }
                       val defaultPrompt = if (usePattern) s.lockPromptPattern else s.lockPromptPin
@@ -3153,10 +3532,12 @@ jobs:
                           finish()
                           overridePendingTransition(0, 0)
                       }
-                      fun onWrongAttempt() {
+                      fun onWrongAttempt(methodStr: String = if (usePattern) "Pattern" else "PIN") {
                           isErrorState = true
-                          AppRepo.triggerShortVibration(this@LockScreenActivity, 65L)
-                          val (_, penaltySec) = AppRepo.registerWrongCredentialAttempt(this@LockScreenActivity, targetPkg)
+                          if (effCfg.vibrateOnError) {
+                              AppRepo.triggerShortVibration(this@LockScreenActivity, 65L)
+                          }
+                          val (_, penaltySec) = AppRepo.registerWrongCredentialAttempt(this@LockScreenActivity, targetPkg, methodStr)
                           if (penaltySec > 0) {
                               cooldownRemainingSec = penaltySec
                               statusMessage = s.formatCooldown(penaltySec)
@@ -3177,7 +3558,7 @@ jobs:
                               triggerFingerprintPrompt(
                                   s = s,
                                   onSuccess = { onSuccessfulUnlock() },
-                                  onFailedAttempt = { onWrongAttempt() },
+                                  onFailedAttempt = { onWrongAttempt("Fingerprint") },
                                   onCancelOrError = { telegramBiometricPulse = false }
                               )
                           }
@@ -3203,10 +3584,11 @@ jobs:
                               onPatternAttempt = { patternStr, resetPatternCallback ->
                                   val rem = AppRepo.getLockoutRemainingSeconds()
                                   val isCorrect = AppRepo.verifyPattern(patternStr)
+                                  val isDecoy = effCfg.decoyCrashEnabled && AppRepo.verifyDecoyPattern(patternStr)
                                   if (rem > 0) {
                                       cooldownRemainingSec = rem
-                                      if (!isCorrect) {
-                                          onWrongAttempt()
+                                      if (!isCorrect && !isDecoy) {
+                                          onWrongAttempt("Pattern")
                                       } else {
                                           isErrorState = true
                                           AppRepo.triggerShortVibration(this@LockScreenActivity, 50L)
@@ -3218,8 +3600,11 @@ jobs:
                                       }
                                   } else if (isCorrect) {
                                       onSuccessfulUnlock()
+                                  } else if (isDecoy) {
+                                      resetPatternCallback()
+                                      isShowingFakeCrash = true
                                   } else {
-                                      onWrongAttempt()
+                                      onWrongAttempt("Pattern")
                                       scope.launch {
                                           delay(350)
                                           resetPatternCallback()
@@ -3237,10 +3622,11 @@ jobs:
                                       if (enteredPin.length == 4) {
                                           val rem = AppRepo.getLockoutRemainingSeconds()
                                           val isCorrect = AppRepo.verifyPin(enteredPin)
+                                          val isDecoy = effCfg.decoyCrashEnabled && AppRepo.verifyDecoyPin(enteredPin)
                                           if (rem > 0) {
                                               cooldownRemainingSec = rem
-                                              if (!isCorrect) {
-                                                  onWrongAttempt()
+                                              if (!isCorrect && !isDecoy) {
+                                                  onWrongAttempt("PIN")
                                               } else {
                                                   isErrorState = true
                                                   AppRepo.triggerShortVibration(this@LockScreenActivity, 50L)
@@ -3252,8 +3638,11 @@ jobs:
                                               }
                                           } else if (isCorrect) {
                                               onSuccessfulUnlock()
+                                          } else if (isDecoy) {
+                                              enteredPin = ""
+                                              isShowingFakeCrash = true
                                           } else {
-                                              onWrongAttempt()
+                                              onWrongAttempt("PIN")
                                               scope.launch {
                                                   delay(260)
                                                   enteredPin = ""
@@ -3273,12 +3662,19 @@ jobs:
                                   triggerFingerprintPrompt(
                                       s = s,
                                       onSuccess = { onSuccessfulUnlock() },
-                                      onFailedAttempt = { onWrongAttempt() },
+                                      onFailedAttempt = { onWrongAttempt("Fingerprint") },
                                       onCancelOrError = { telegramBiometricPulse = false }
                                   )
                               },
                               onExitClick = { navigateHomeAndClose() }
                           )
+                          if (isShowingFakeCrash) {
+                              FakeAndroidSystemCrashOverlay(
+                                  targetPkg = targetPkg,
+                                  s = s,
+                                  onCloseApp = { navigateHomeAndClose() }
+                              )
+                          }
                       }
                   }
               }
@@ -3344,6 +3740,116 @@ jobs:
               return bm.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.BIOMETRIC_WEAK) == BiometricManager.BIOMETRIC_SUCCESS
           }
           @Composable
+          fun FakeAndroidSystemCrashOverlay(
+              targetPkg: String,
+              s: UiStrings,
+              onCloseApp: () -> Unit
+          ) {
+              val context = LocalContext.current
+              val (appName, appIconBmp) = remember(targetPkg) {
+                  val pkg = if (targetPkg.isBlank()) context.packageName else targetPkg
+                  runCatching {
+                      val pm = context.packageManager
+                      val ai = pm.getApplicationInfo(pkg, 0)
+                      val label = pm.getApplicationLabel(ai).toString()
+                      val img = drawableToHdImageBitmap(pm.getApplicationIcon(ai), 96)
+                      label to img
+                  }.getOrElse {
+                      "Application" to drawableToHdImageBitmap(context.packageManager.defaultActivityIcon, 96)
+                  }
+              }
+              val pkgDisplay = if (targetPkg.isBlank()) context.packageName else targetPkg
+              Box(
+                  modifier = Modifier
+                      .fillMaxSize()
+                      .background(Color(0xFF0B0D12))
+                      .pointerInput(Unit) { detectTapGestures {} },
+                  contentAlignment = Alignment.Center
+              ) {
+                  Surface(
+                      shape = RoundedCornerShape(26.dp),
+                      color = Color(0xFF22252E),
+                      border = BorderStroke(1.dp, Color(0x22FFFFFF)),
+                      shadowElevation = 18.dp,
+                      modifier = Modifier
+                          .widthIn(max = 380.dp)
+                          .fillMaxWidth()
+                          .padding(horizontal = 24.dp)
+                  ) {
+                      Column(
+                          modifier = Modifier.padding(22.dp),
+                          verticalArrangement = Arrangement.spacedBy(14.dp)
+                      ) {
+                          Row(
+                              verticalAlignment = Alignment.CenterVertically,
+                              horizontalArrangement = Arrangement.spacedBy(12.dp)
+                          ) {
+                              Image(
+                                  bitmap = appIconBmp,
+                                  contentDescription = appName,
+                                  modifier = Modifier
+                                      .size(42.dp)
+                                      .clip(RoundedCornerShape(10.dp))
+                              )
+                              Text(
+                                  text = s.decoyCrashHeadline.replace("{app}", appName),
+                                  color = Color(0xFFF3F4F6),
+                                  fontSize = 16.sp,
+                                  fontWeight = FontWeight.Bold,
+                                  lineHeight = 22.sp
+                              )
+                          }
+                          Surface(
+                              shape = RoundedCornerShape(12.dp),
+                              color = Color(0xFF15171E),
+                              border = BorderStroke(1.dp, Color(0x18FFFFFF)),
+                              modifier = Modifier.fillMaxWidth()
+                          ) {
+                              CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                                  Text(
+                                      text = "java.lang.RuntimeException: Unable to start activity ComponentInfo{$pkgDisplay/androidx.core.app.CoreComponentFactory}: android.database.sqlite.SQLiteDatabaseCorruptException: database disk image is malformed (code 11 SQLITE_CORRUPT)",
+                                      color = Color(0xFF9CA3AF),
+                                      fontSize = 10.5.sp,
+                                      fontFamily = FontFamily.Monospace,
+                                      lineHeight = 15.sp,
+                                      modifier = Modifier.padding(10.dp)
+                                  )
+                              }
+                          }
+                          HorizontalDivider(color = Color(0x22FFFFFF))
+                          TextButton(
+                              onClick = {
+                                  Toast.makeText(context, "Android System: Process $pkgDisplay terminated (SIGABRT)", Toast.LENGTH_SHORT).show()
+                                  onCloseApp()
+                              },
+                              modifier = Modifier.fillMaxWidth()
+                          ) {
+                              Text(
+                                  text = s.decoyAppInfoBtn,
+                                  color = Color(0xFFD1D5DB),
+                                  fontSize = 14.sp,
+                                  fontWeight = FontWeight.Medium
+                              )
+                          }
+                          Button(
+                              onClick = onCloseApp,
+                              modifier = Modifier.fillMaxWidth().height(44.dp),
+                              shape = RoundedCornerShape(12.dp),
+                              colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF374151))
+                          ) {
+                              Text(
+                                  text = s.decoyCloseBtn,
+                                  color = Color.White,
+                                  fontSize = 14.sp,
+                                  fontWeight = FontWeight.Bold
+                              )
+                          }
+                      }
+                  }
+              }
+          }
+
+          @Composable
           fun AdaptiveLockScreenBody(
               s: UiStrings,
               usePattern: Boolean,
@@ -3363,37 +3869,41 @@ jobs:
           ) {
               val metrics = rememberAdaptiveScreenMetrics()
               @Composable
+              fun BrandBadgeRow() {
+                  Row(
+                      verticalAlignment = Alignment.CenterVertically,
+                      horizontalArrangement = Arrangement.spacedBy(10.dp)
+                  ) {
+                      Image(
+                          painter = painterResource(id = R.drawable.ic_nowlock_logo),
+                          contentDescription = "NowLock",
+                          modifier = Modifier
+                              .size(if (metrics.isUltraShortHeight) 28.dp else 32.dp)
+                              .clip(RoundedCornerShape(9.dp))
+                      )
+                      AnimatedRgbBrandText(
+                          text = "NowLock",
+                          fontSize = if (metrics.isUltraShortHeight) 21.sp else 24.sp
+                      )
+                  }
+              }
+              @Composable
               fun HeaderAndPinDotsSection() {
                   Column(
                       horizontalAlignment = Alignment.CenterHorizontally,
                       verticalArrangement = Arrangement.Center
                   ) {
-                      Row(
-                          verticalAlignment = Alignment.CenterVertically,
-                          horizontalArrangement = Arrangement.spacedBy(10.dp)
-                      ) {
-                          Image(
-                              painter = painterResource(id = R.drawable.ic_nowlock_logo),
-                              contentDescription = "NowLock",
-                              modifier = Modifier
-                                  .size(if (metrics.isUltraShortHeight) 28.dp else 32.dp)
-                                  .clip(RoundedCornerShape(9.dp))
-                          )
-                          AnimatedRgbBrandText(
-                              text = "NowLock",
-                              fontSize = if (metrics.isUltraShortHeight) 21.sp else 24.sp
-                          )
-                      }
-                      Spacer(Modifier.height(if (metrics.isUltraShortHeight) 10.dp else 16.dp))
-                      Text(
-                          text = statusMessage,
-                          color = if (isErrorState) Color(0xFFEF4444) else secondaryTextColor,
-                          fontSize = 13.5.sp,
-                          textAlign = TextAlign.Center,
-                          modifier = Modifier.padding(horizontal = 12.dp)
-                      )
                       if (!usePattern) {
-                          Spacer(Modifier.height(if (metrics.isUltraShortHeight) 14.dp else 24.dp))
+                          // PIN Mode: Prompt + 4 PIN Dots at top, and Padlock Icon + "NowLock" positioned BELOW the PIN dots section!
+                          Spacer(Modifier.height(if (metrics.isUltraShortHeight) 6.dp else 18.dp))
+                          Text(
+                              text = statusMessage,
+                              color = if (isErrorState) Color(0xFFEF4444) else secondaryTextColor,
+                              fontSize = 13.5.sp,
+                              textAlign = TextAlign.Center,
+                              modifier = Modifier.padding(horizontal = 12.dp)
+                          )
+                          Spacer(Modifier.height(if (metrics.isUltraShortHeight) 14.dp else 22.dp))
                           CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
                               Row(
                                   horizontalArrangement = Arrangement.spacedBy(18.dp),
@@ -3427,6 +3937,20 @@ jobs:
                                   }
                               }
                           }
+                          Spacer(Modifier.height(if (metrics.isUltraShortHeight) 16.dp else 30.dp))
+                          BrandBadgeRow()
+                      } else {
+                          // Pattern Mode: Move Padlock Icon + "NowLock" lower down toward the vertical middle of the screen!
+                          Spacer(Modifier.height(if (metrics.isUltraShortHeight) 14.dp else if (metrics.isCompactHeight) 44.dp else 72.dp))
+                          BrandBadgeRow()
+                          Spacer(Modifier.height(if (metrics.isUltraShortHeight) 10.dp else 16.dp))
+                          Text(
+                              text = statusMessage,
+                              color = if (isErrorState) Color(0xFFEF4444) else secondaryTextColor,
+                              fontSize = 13.5.sp,
+                              textAlign = TextAlign.Center,
+                              modifier = Modifier.padding(horizontal = 12.dp)
+                          )
                       }
                   }
               }
@@ -3917,6 +4441,177 @@ jobs:
               drawable.draw(canvas)
               return bitmap.asImageBitmap()
           }
+          // Animated Top Security Status Emblem for Smart Security Report Tab:
+          // - Critical Red Danger State (#EF4444) when permissions or lock service are disabled (or initially not granted)
+          // - Warning Yellow Exclamation State (#F59E0B) when failed password attempts or password warnings exist
+          // - Smooth natural color & geometry morphing between states!
+          @Composable
+          fun AnimatedSecurityReportEmblem(
+              isDangerRed: Boolean,
+              isWarningYellow: Boolean,
+              titleText: String,
+              subtitleText: String,
+              cardColor: Color,
+              borderColor: Color,
+              txtColor: Color,
+              subColor: Color
+          ) {
+              val targetAccent = when {
+                  isDangerRed -> Color(0xFFEF4444)
+                  isWarningYellow -> Color(0xFFF59E0B)
+                  else -> Color(0xFF10B981)
+              }
+              val animatedColor by animateColorAsState(
+                  targetValue = targetAccent,
+                  animationSpec = tween(durationMillis = 700, easing = FastOutSlowInEasing),
+                  label = "emblemColorMorph"
+              )
+              // 1f = Red Danger Triangle, 0f = Yellow Warning Circle / Shield
+              val shapeMorph by animateFloatAsState(
+                  targetValue = if (isDangerRed) 1f else 0f,
+                  animationSpec = tween(durationMillis = 700, easing = FastOutSlowInEasing),
+                  label = "emblemShapeMorph"
+              )
+              val infiniteTransition = rememberInfiniteTransition(label = "securityEmblemPulse")
+              val pulseProgress by infiniteTransition.animateFloat(
+                  initialValue = 0f,
+                  targetValue = 1f,
+                  animationSpec = infiniteRepeatable(
+                      animation = tween(durationMillis = 1900, easing = FastOutSlowInEasing),
+                      repeatMode = RepeatMode.Restart
+                  ),
+                  label = "pulseWave"
+              )
+              val emblemScale by infiniteTransition.animateFloat(
+                  initialValue = 0.94f,
+                  targetValue = 1.06f,
+                  animationSpec = infiniteRepeatable(
+                      animation = tween(durationMillis = 1100, easing = FastOutSlowInEasing),
+                      repeatMode = RepeatMode.Reverse
+                  ),
+                  label = "emblemBreath"
+              )
+              Surface(
+                  shape = RoundedCornerShape(22.dp),
+                  color = cardColor,
+                  border = BorderStroke(1.5.dp, animatedColor.copy(alpha = 0.55f)),
+                  modifier = Modifier.fillMaxWidth()
+              ) {
+                  Column(
+                      modifier = Modifier
+                          .fillMaxWidth()
+                          .padding(horizontal = 18.dp, vertical = 18.dp),
+                      horizontalAlignment = Alignment.CenterHorizontally
+                  ) {
+                      Box(
+                          contentAlignment = Alignment.Center,
+                          modifier = Modifier.size(96.dp)
+                      ) {
+                          ComposeCanvas(
+                              modifier = Modifier
+                                  .fillMaxSize()
+                                  .scale(emblemScale)
+                          ) {
+                              val cx = size.width / 2f
+                              val cy = size.height / 2f
+                              val baseR = size.minDimension * 0.32f
+                              // Expanding animated pulse wave
+                              drawCircle(
+                                  color = animatedColor.copy(alpha = (1f - pulseProgress) * 0.34f),
+                                  radius = baseR * (1f + pulseProgress * 0.65f),
+                                  center = Offset(cx, cy)
+                              )
+                              drawCircle(
+                                  color = animatedColor.copy(alpha = 0.18f),
+                                  radius = baseR * 1.18f,
+                                  center = Offset(cx, cy)
+                              )
+                              if (shapeMorph > 0.45f) {
+                                  // Dynamic Red Danger Hazard Triangle with rounded stroke + inner fill
+                                  val triPath = Path().apply {
+                                      moveTo(cx, cy - baseR * 0.95f)
+                                      lineTo(cx + baseR * 0.92f, cy + baseR * 0.78f)
+                                      lineTo(cx - baseR * 0.92f, cy + baseR * 0.78f)
+                                      close()
+                                  }
+                                  drawPath(
+                                      path = triPath,
+                                      color = animatedColor.copy(alpha = 0.25f)
+                                  )
+                                  drawPath(
+                                      path = triPath,
+                                      color = animatedColor,
+                                      style = androidx.compose.ui.graphics.drawscope.Stroke(
+                                          width = 3.5.dp.toPx(),
+                                          cap = StrokeCap.Round
+                                      )
+                                  )
+                              } else {
+                                  // Dynamic Yellow Warning Exclamation Circle / Safe Badge
+                                  drawCircle(
+                                      color = animatedColor.copy(alpha = 0.25f),
+                                      radius = baseR * 0.92f,
+                                      center = Offset(cx, cy)
+                                  )
+                                  drawCircle(
+                                      color = animatedColor,
+                                      radius = baseR * 0.92f,
+                                      center = Offset(cx, cy),
+                                      style = androidx.compose.ui.graphics.drawscope.Stroke(width = 3.5.dp.toPx())
+                                  )
+                              }
+                              // Central Exclamation Mark (!) for both Danger (Red) and Warning (Yellow), or Checkmark when Safe
+                              if (isDangerRed || isWarningYellow) {
+                                  drawLine(
+                                      color = animatedColor,
+                                      start = Offset(cx, cy - baseR * 0.36f),
+                                      end = Offset(cx, cy + baseR * 0.16f),
+                                      strokeWidth = 4.2.dp.toPx(),
+                                      cap = StrokeCap.Round
+                                  )
+                                  drawCircle(
+                                      color = animatedColor,
+                                      radius = 2.6.dp.toPx(),
+                                      center = Offset(cx, cy + baseR * 0.44f)
+                                  )
+                              } else {
+                                  drawLine(
+                                      color = animatedColor,
+                                      start = Offset(cx - baseR * 0.32f, cy + baseR * 0.04f),
+                                      end = Offset(cx - baseR * 0.06f, cy + baseR * 0.30f),
+                                      strokeWidth = 3.8.dp.toPx(),
+                                      cap = StrokeCap.Round
+                                  )
+                                  drawLine(
+                                      color = animatedColor,
+                                      start = Offset(cx - baseR * 0.06f, cy + baseR * 0.30f),
+                                      end = Offset(cx + baseR * 0.38f, cy - baseR * 0.24f),
+                                      strokeWidth = 3.8.dp.toPx(),
+                                      cap = StrokeCap.Round
+                                  )
+                              }
+                          }
+                      }
+                      Spacer(Modifier.height(10.dp))
+                      Text(
+                          text = titleText,
+                          color = animatedColor,
+                          fontSize = 14.5.sp,
+                          fontWeight = FontWeight.Bold,
+                          textAlign = TextAlign.Center
+                      )
+                      Spacer(Modifier.height(4.dp))
+                      Text(
+                          text = subtitleText,
+                          color = subColor,
+                          fontSize = 11.5.sp,
+                          textAlign = TextAlign.Center,
+                          lineHeight = 17.sp
+                      )
+                  }
+              }
+          }
+
           @OptIn(ExperimentalFoundationApi::class)
           class MainActivity : FragmentActivity() {
               private var hasOverlayState = mutableStateOf(false)
@@ -4092,12 +4787,25 @@ jobs:
                       }
                       var filterMode by remember { mutableStateOf(AppFilterMode.ALL) }
                       var searchQuery by remember { mutableStateOf("") }
+                      var isLauncherHidden by remember { mutableStateOf(AppRepo.isLauncherHidden()) }
+                      var lockOnScreenOff by remember { mutableStateOf(AppRepo.isLockOnScreenOffEnabled()) }
+                      var decoyEnabled by remember { mutableStateOf(AppRepo.isDecoyEnabled()) }
                       var showPinDialog by remember { mutableStateOf(false) }
                       var showPatternDialog by remember { mutableStateOf(false) }
+                      var showDecoyPinDialog by remember { mutableStateOf(false) }
+                      var showDecoyPatternDialog by remember { mutableStateOf(false) }
                       var showPrivacyFullModal by remember { mutableStateOf(false) }
                       var pendingLockPkg by remember { mutableStateOf<String?>(null) }
+                      var expandedPerAppPkg by remember { mutableStateOf<String?>(null) }
                       var passwordSetState by remember { mutableStateOf(AppRepo.isAnyPasswordSet()) }
+                      var securityLogs by remember { mutableStateOf(AppRepo.getSecurityLogs()) }
                       var showUpdateSubtitle by remember { mutableStateOf(false) }
+                      // Refresh security logs whenever switching to the Security Report tab, and auto-clear from storage once read upon leaving the tab!
+                      LaunchedEffect(pagerState.currentPage) {
+                          if (NowLockNavTab.entries[pagerState.currentPage] == NowLockNavTab.REPORT) {
+                              securityLogs = AppRepo.getSecurityLogs()
+                          }
+                      }
                       val scope = rememberCoroutineScope()
                       val navBarBottomInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
                       CompositionLocalProvider(LocalLayoutDirection provides if (appLang.isRtl) LayoutDirection.Rtl else LayoutDirection.Ltr) {
@@ -4212,103 +4920,6 @@ jobs:
                                                   when (NowLockNavTab.entries[pageIdx]) {
                                               NowLockNavTab.APPS -> {
                                                   Column(modifier = Modifier.widthIn(max = screenMetrics.contentMaxWidthDp.dp).fillMaxSize().padding(horizontal = 16.dp)) {
-                                                      // Ultra-Compact Collapsible Permission Strip (Never takes half the screen, never disappears prematurely!)
-                                                      val grantedCount = listOf(hasAccPerm, hasUsagePerm, hasOverlayPerm, hasCamPerm).count { it }
-                                                      var permBarExpanded by remember(isEngineReady) { mutableStateOf(!isEngineReady) }
-                                                      Surface(
-                                                          shape = RoundedCornerShape(12.dp),
-                                                          color = if (isEngineReady) Color(0x1410B981) else Color(0x1AF59E0B),
-                                                          border = BorderStroke(1.dp, if (isEngineReady) Color(0x5510B981) else Color(0x88F59E0B)),
-                                                          modifier = Modifier.fillMaxWidth().padding(top = 6.dp)
-                                                      ) {
-                                                          Column(
-                                                              modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                                                              verticalArrangement = Arrangement.spacedBy(5.dp)
-                                                          ) {
-                                                              Row(
-                                                                  modifier = Modifier
-                                                                      .fillMaxWidth()
-                                                                      .clickable { permBarExpanded = !permBarExpanded },
-                                                                  horizontalArrangement = Arrangement.SpaceBetween,
-                                                                  verticalAlignment = Alignment.CenterVertically
-                                                              ) {
-                                                                  Text(
-                                                                      text = if (isEngineReady) "${s.statusActive} (4/4)" else "${s.statusNeedsPerm} ($grantedCount/4)",
-                                                                      color = if (isEngineReady) Color(0xFF10B981) else Color(0xFFD97706),
-                                                                      fontWeight = FontWeight.Bold,
-                                                                      fontSize = 11.sp
-                                                                  )
-                                                                  Text(
-                                                                      text = if (permBarExpanded) "▲" else "▼",
-                                                                      color = if (isEngineReady) Color(0xFF10B981) else Color(0xFFD97706),
-                                                                      fontWeight = FontWeight.Bold,
-                                                                      fontSize = 11.sp
-                                                                  )
-                                                              }
-                                                              AnimatedVisibility(visible = permBarExpanded) {
-                                                                  Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                                                                      if (!hasAccPerm || !hasUsagePerm) {
-                                                                          Surface(
-                                                                              shape = RoundedCornerShape(8.dp),
-                                                                              color = Color(0xFFD97706),
-                                                                              modifier = Modifier
-                                                                                  .fillMaxWidth()
-                                                                                  .height(26.dp)
-                                                                                  .clickable {
-                                                                                      Toast.makeText(this@MainActivity, s.permRestrictedToast, Toast.LENGTH_LONG).show()
-                                                                                      openDirectAppDetailsSettings(this@MainActivity)
-                                                                                  }
-                                                                          ) {
-                                                                              Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 6.dp)) {
-                                                                                  Text(
-                                                                                      text = s.permRestrictedBtn,
-                                                                                      fontSize = 9.sp,
-                                                                                      fontWeight = FontWeight.Bold,
-                                                                                      color = Color.White,
-                                                                                      maxLines = 1
-                                                                                  )
-                                                                              }
-                                                                          }
-                                                                      }
-                                                                      Row(
-                                                                          modifier = Modifier.fillMaxWidth(),
-                                                                          horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                                                      ) {
-                                                                          val permItems: List<Triple<String, Boolean, () -> Unit>> = listOf(
-                                                                              Triple(s.perm1Acc, hasAccPerm, { openDirectAccessibilitySettings(this@MainActivity) }),
-                                                                              Triple(s.perm2Usage, hasUsagePerm, { openDirectUsageAccessSettings(this@MainActivity) }),
-                                                                              Triple(s.perm3Overlay, hasOverlayPerm, { openDirectOverlaySettings(this@MainActivity) }),
-                                                                              Triple(s.perm4Camera, hasCamPerm, { requestCameraPermissionSafely() })
-                                                                          )
-                                                                          permItems.forEach { item ->
-                                                                              val labelStr = item.first
-                                                                              val isGranted = item.second
-                                                                              val actionClick = item.third
-                                                                              Surface(
-                                                                                  shape = RoundedCornerShape(8.dp),
-                                                                                  color = if (isGranted) Color(0xFF10B981) else blue,
-                                                                                  modifier = Modifier
-                                                                                      .weight(1f)
-                                                                                      .height(28.dp)
-                                                                                      .clickable { actionClick() }
-                                                                              ) {
-                                                                                  Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 2.dp)) {
-                                                                                      Text(
-                                                                                          text = if (isGranted) "✓ $labelStr" else labelStr,
-                                                                                          fontSize = 8.8.sp,
-                                                                                          fontWeight = FontWeight.SemiBold,
-                                                                                          color = Color.White,
-                                                                                          maxLines = 1,
-                                                                                          textAlign = TextAlign.Center
-                                                                                      )
-                                                                                  }
-                                                                              }
-                                                                          }
-                                                                      }
-                                                                  }
-                                                              }
-                                                          }
-                                                      }
                                                       OutlinedTextField(
                                                           value = searchQuery,
                                                           onValueChange = { searchQuery = it },
@@ -4358,7 +4969,11 @@ jobs:
                                                           verticalArrangement = Arrangement.spacedBy(8.dp),
                                                           contentPadding = PaddingValues(bottom = navBarBottomInset + 28.dp)
                                                       ) {
-                                                          items(filteredApps, key = { it.packageName }) { app ->
+                                                          items(items = filteredApps, key = { it.packageName }, contentType = { "app_row" }) { app ->
+                                                              val isExpanded = expandedPerAppPkg == app.packageName
+                                                              var perAppCfg by remember(app.packageName, isExpanded) {
+                                                                  mutableStateOf(AppRepo.getPerAppConfig(app.packageName))
+                                                              }
                                                               Surface(
                                                                   shape = RoundedCornerShape(18.dp),
                                                                   color = card,
@@ -4368,68 +4983,241 @@ jobs:
                                                                   ),
                                                                   modifier = Modifier.fillMaxWidth()
                                                               ) {
-                                                                  Row(
-                                                                      modifier = Modifier
-                                                                          .fillMaxWidth()
-                                                                          .padding(horizontal = 14.dp, vertical = 11.dp),
-                                                                      horizontalArrangement = Arrangement.SpaceBetween,
-                                                                      verticalAlignment = Alignment.CenterVertically
-                                                                  ) {
+                                                                  Column(modifier = Modifier.fillMaxWidth()) {
                                                                       Row(
-                                                                          verticalAlignment = Alignment.CenterVertically,
-                                                                          modifier = Modifier.weight(1f)
+                                                                          modifier = Modifier
+                                                                              .fillMaxWidth()
+                                                                              .padding(horizontal = 14.dp, vertical = 11.dp),
+                                                                          horizontalArrangement = Arrangement.SpaceBetween,
+                                                                          verticalAlignment = Alignment.CenterVertically
                                                                       ) {
-                                                                          Image(
-                                                                              bitmap = app.iconImage,
-                                                                              contentDescription = app.label,
+                                                                          Row(
+                                                                              verticalAlignment = Alignment.CenterVertically,
+                                                                              modifier = Modifier.weight(1f)
+                                                                          ) {
+                                                                              Image(
+                                                                                  bitmap = app.iconImage,
+                                                                                  contentDescription = app.label,
+                                                                                  modifier = Modifier
+                                                                                      .size(44.dp)
+                                                                                      .clip(RoundedCornerShape(11.dp))
+                                                                              )
+                                                                              Spacer(Modifier.width(12.dp))
+                                                                              Column {
+                                                                                  Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                                                      Text(app.label, color = txt, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                                                                                      if (app.isSelfApp) {
+                                                                                          Surface(
+                                                                                              shape = RoundedCornerShape(6.dp),
+                                                                                              color = blue.copy(alpha = 0.15f)
+                                                                                          ) {
+                                                                                              Text(
+                                                                                                  s.selfAppBadge,
+                                                                                                  color = blue,
+                                                                                                  fontSize = 10.sp,
+                                                                                                  fontWeight = FontWeight.Bold,
+                                                                                                  modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                                                              )
+                                                                                          }
+                                                                                      }
+                                                                                  }
+                                                                                  Text(app.packageName, color = sub, fontSize = 11.sp)
+                                                                              }
+                                                                          }
+                                                                          Row(
+                                                                              verticalAlignment = Alignment.CenterVertically,
+                                                                              horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                                                          ) {
+                                                                              // Expandable Per-App Settings Arrow Button right next to the Lock Switch!
+                                                                              Surface(
+                                                                                  shape = RoundedCornerShape(8.dp),
+                                                                                  color = if (isExpanded || perAppCfg.useCustom) blue.copy(alpha = 0.16f) else Color.Transparent,
+                                                                                  border = BorderStroke(1.dp, if (perAppCfg.useCustom) blue else border),
+                                                                                  modifier = Modifier
+                                                                                      .size(32.dp)
+                                                                                      .clickable {
+                                                                                          expandedPerAppPkg = if (isExpanded) null else app.packageName
+                                                                                      }
+                                                                              ) {
+                                                                                  Box(contentAlignment = Alignment.Center) {
+                                                                                      Text(
+                                                                                          text = if (isExpanded) "▲" else "▼",
+                                                                                          color = if (perAppCfg.useCustom) blue else sub,
+                                                                                          fontSize = 11.sp,
+                                                                                          fontWeight = FontWeight.Bold
+                                                                                      )
+                                                                                  }
+                                                                              }
+                                                                              Switch(
+                                                                                  checked = app.isLocked,
+                                                                                  onCheckedChange = { lock ->
+                                                                                      if (!AppRepo.isAnyPasswordSet() && lock) {
+                                                                                          pendingLockPkg = app.packageName
+                                                                                          if (comboMode == LockComboMode.PATTERN_FINGERPRINT) {
+                                                                                              showPatternDialog = true
+                                                                                          } else {
+                                                                                              showPinDialog = true
+                                                                                          }
+                                                                                      } else {
+                                                                                          AppRepo.toggleAppLock(app.packageName, lock)
+                                                                                          if (app.isSelfApp && lock) {
+                                                                                              AppRepo.markUnlocked(packageName)
+                                                                                          }
+                                                                                          appList = appList.map {
+                                                                                              if (it.packageName == app.packageName) it.copy(isLocked = lock) else it
+                                                                                          }
+                                                                                          NowLockMonitorService.startServiceSafely(this@MainActivity)
+                                                                                      }
+                                                                                  }
+                                                                              )
+                                                                          }
+                                                                      }
+                                                                      // Expandable Per-App Settings Drawer (Default: Follow Global Settings, or Custom Override for every setting!)
+                                                                      AnimatedVisibility(visible = isExpanded) {
+                                                                          Column(
                                                                               modifier = Modifier
-                                                                                  .size(44.dp)
-                                                                                  .clip(RoundedCornerShape(11.dp))
-                                                                          )
-                                                                          Spacer(Modifier.width(12.dp))
-                                                                          Column {
-                                                                              Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                                                                  Text(app.label, color = txt, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                                                                                  if (app.isSelfApp) {
+                                                                                  .fillMaxWidth()
+                                                                                  .padding(start = 14.dp, end = 14.dp, bottom = 12.dp),
+                                                                              verticalArrangement = Arrangement.spacedBy(8.dp)
+                                                                          ) {
+                                                                              HorizontalDivider(color = border)
+                                                                              Row(
+                                                                                  modifier = Modifier.fillMaxWidth(),
+                                                                                  horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                                                              ) {
+                                                                                  listOf(
+                                                                                      false to s.perAppFollowGlobal,
+                                                                                      true to s.perAppCustom
+                                                                                  ).forEach { (isCustomMode, modeTitle) ->
+                                                                                      val sel = perAppCfg.useCustom == isCustomMode
                                                                                       Surface(
-                                                                                          shape = RoundedCornerShape(6.dp),
-                                                                                          color = blue.copy(alpha = 0.15f)
+                                                                                          shape = RoundedCornerShape(10.dp),
+                                                                                          color = if (sel) blue else blue.copy(alpha = 0.08f),
+                                                                                          modifier = Modifier
+                                                                                              .weight(1f)
+                                                                                              .height(34.dp)
+                                                                                              .clickable {
+                                                                                                  perAppCfg = perAppCfg.copy(useCustom = isCustomMode)
+                                                                                                  AppRepo.savePerAppConfig(app.packageName, perAppCfg)
+                                                                                              }
                                                                                       ) {
-                                                                                          Text(
-                                                                                              s.selfAppBadge,
-                                                                                              color = blue,
-                                                                                              fontSize = 10.sp,
-                                                                                              fontWeight = FontWeight.Bold,
-                                                                                              modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                                                                          )
+                                                                                          Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 4.dp)) {
+                                                                                              Text(
+                                                                                                  text = modeTitle,
+                                                                                                  color = if (sel) Color.White else txt,
+                                                                                                  fontSize = 11.sp,
+                                                                                                  fontWeight = FontWeight.SemiBold,
+                                                                                                  textAlign = TextAlign.Center
+                                                                                              )
+                                                                                          }
                                                                                       }
                                                                                   }
                                                                               }
-                                                                              Text(app.packageName, color = sub, fontSize = 11.sp)
-                                                                          }
-                                                                      }
-                                                                      Switch(
-                                                                          checked = app.isLocked,
-                                                                          onCheckedChange = { lock ->
-                                                                              if (!AppRepo.isAnyPasswordSet() && lock) {
-                                                                                  pendingLockPkg = app.packageName
-                                                                                  if (comboMode == LockComboMode.PATTERN_FINGERPRINT) {
-                                                                                      showPatternDialog = true
-                                                                                  } else {
-                                                                                      showPinDialog = true
+                                                                              if (perAppCfg.useCustom) {
+                                                                                  // 1. Lock Method (PIN vs Pattern) for this app
+                                                                                  Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                                                                                      LockComboMode.entries.forEach { m ->
+                                                                                          val sel = perAppCfg.comboMode == m
+                                                                                          val lbl = if (m == LockComboMode.PIN_FINGERPRINT) s.modePin else s.modePattern
+                                                                                          Surface(
+                                                                                              shape = RoundedCornerShape(9.dp),
+                                                                                              color = if (sel) blue else blue.copy(alpha = 0.08f),
+                                                                                              modifier = Modifier
+                                                                                                  .weight(1f)
+                                                                                                  .height(32.dp)
+                                                                                                  .clickable {
+                                                                                                      perAppCfg = perAppCfg.copy(comboMode = m)
+                                                                                                      AppRepo.savePerAppConfig(app.packageName, perAppCfg)
+                                                                                                  }
+                                                                                          ) {
+                                                                                              Box(contentAlignment = Alignment.Center) {
+                                                                                                  Text(lbl, color = if (sel) Color.White else txt, fontSize = 10.5.sp)
+                                                                                              }
+                                                                                          }
+                                                                                      }
                                                                                   }
-                                                                              } else {
-                                                                                  AppRepo.toggleAppLock(app.packageName, lock)
-                                                                                  if (app.isSelfApp && lock) {
-                                                                                      AppRepo.markUnlocked(packageName)
+                                                                                  // 2. Relock Delay for this app
+                                                                                  Row(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxWidth()) {
+                                                                                      RelockDelayOption.entries.forEach { opt ->
+                                                                                          val sel = perAppCfg.relockMinutes == opt.minutes
+                                                                                          Surface(
+                                                                                              shape = RoundedCornerShape(8.dp),
+                                                                                              color = if (sel) blue else blue.copy(alpha = 0.08f),
+                                                                                              modifier = Modifier
+                                                                                                  .weight(1f)
+                                                                                                  .height(30.dp)
+                                                                                                  .clickable {
+                                                                                                      perAppCfg = perAppCfg.copy(relockMinutes = opt.minutes)
+                                                                                                      AppRepo.savePerAppConfig(app.packageName, perAppCfg)
+                                                                                                  }
+                                                                                          ) {
+                                                                                              Box(contentAlignment = Alignment.Center) {
+                                                                                                  Text(opt.getLabel(s), color = if (sel) Color.White else txt, fontSize = 10.sp)
+                                                                                              }
+                                                                                          }
+                                                                                      }
                                                                                   }
-                                                                                  appList = appList.map {
-                                                                                      if (it.packageName == app.packageName) it.copy(isLocked = lock) else it
+                                                                                  // 3. Individual Toggles for this app (Fingerprint, Lock on Screen Off, Intruder Selfie, Vibration, Fake Crash Decoy)
+                                                                                  SettingsToggleRow(
+                                                                                      title = s.fpTitle,
+                                                                                      subtitle = s.fpSub,
+                                                                                      checked = perAppCfg.fpEnabled,
+                                                                                      txtColor = txt,
+                                                                                      subColor = sub,
+                                                                                      onCheckedChange = {
+                                                                                          perAppCfg = perAppCfg.copy(fpEnabled = it)
+                                                                                          AppRepo.savePerAppConfig(app.packageName, perAppCfg)
+                                                                                      }
+                                                                                  )
+                                                                                  if (perAppCfg.relockMinutes > 0) {
+                                                                                      SettingsToggleRow(
+                                                                                          title = s.lockOnScreenOffTitle,
+                                                                                          subtitle = s.lockOnScreenOffSub,
+                                                                                          checked = perAppCfg.lockOnScreenOff,
+                                                                                          txtColor = txt,
+                                                                                          subColor = sub,
+                                                                                          onCheckedChange = {
+                                                                                              perAppCfg = perAppCfg.copy(lockOnScreenOff = it)
+                                                                                              AppRepo.savePerAppConfig(app.packageName, perAppCfg)
+                                                                                          }
+                                                                                      )
                                                                                   }
-                                                                                  NowLockMonitorService.startServiceSafely(this@MainActivity)
+                                                                                  SettingsToggleRow(
+                                                                                      title = s.intruderTitle,
+                                                                                      subtitle = s.intruderSubPrefix,
+                                                                                      checked = perAppCfg.intruderSelfie,
+                                                                                      txtColor = txt,
+                                                                                      subColor = sub,
+                                                                                      onCheckedChange = {
+                                                                                          perAppCfg = perAppCfg.copy(intruderSelfie = it)
+                                                                                          AppRepo.savePerAppConfig(app.packageName, perAppCfg)
+                                                                                      }
+                                                                                  )
+                                                                                  SettingsToggleRow(
+                                                                                      title = s.vibrateTitle,
+                                                                                      subtitle = s.vibrateSub,
+                                                                                      checked = perAppCfg.vibrateOnError,
+                                                                                      txtColor = txt,
+                                                                                      subColor = sub,
+                                                                                      onCheckedChange = {
+                                                                                          perAppCfg = perAppCfg.copy(vibrateOnError = it)
+                                                                                          AppRepo.savePerAppConfig(app.packageName, perAppCfg)
+                                                                                      }
+                                                                                  )
+                                                                                  SettingsToggleRow(
+                                                                                      title = s.decoyToggleTitle,
+                                                                                      subtitle = s.decoySectionTitle,
+                                                                                      checked = perAppCfg.decoyCrashEnabled,
+                                                                                      txtColor = txt,
+                                                                                      subColor = sub,
+                                                                                      onCheckedChange = {
+                                                                                          perAppCfg = perAppCfg.copy(decoyCrashEnabled = it)
+                                                                                          AppRepo.savePerAppConfig(app.packageName, perAppCfg)
+                                                                                      }
+                                                                                  )
                                                                               }
                                                                           }
-                                                                      )
+                                                                      }
                                                                   }
                                                               }
                                                           }
@@ -4524,6 +5312,46 @@ jobs:
                                                                       }
                                                                   }
                                                               )
+                                                              HorizontalDivider(color = border, modifier = Modifier.padding(vertical = 8.dp))
+                                                              // Decoy / Fake Crash Password Section
+                                                              SettingsToggleRow(
+                                                                  title = s.decoyToggleTitle,
+                                                                  subtitle = s.decoyToggleSub,
+                                                                  checked = decoyEnabled,
+                                                                  txtColor = txt,
+                                                                  subColor = sub,
+                                                                  onCheckedChange = { enabled ->
+                                                                      decoyEnabled = enabled
+                                                                      AppRepo.setDecoyEnabled(enabled)
+                                                                      if (enabled && !AppRepo.isDecoyPinSet() && !AppRepo.isDecoyPatternSet()) {
+                                                                          showDecoyPinDialog = true
+                                                                      }
+                                                                  }
+                                                              )
+                                                              Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth().padding(top = 6.dp)) {
+                                                                  OutlinedButton(
+                                                                      onClick = { showDecoyPinDialog = true },
+                                                                      modifier = Modifier.weight(1f).height(38.dp),
+                                                                      shape = RoundedCornerShape(10.dp)
+                                                                  ) {
+                                                                      Text(
+                                                                          text = if (AppRepo.isDecoyPinSet()) "✓ ${s.btnSetDecoyPin}" else s.btnSetDecoyPin,
+                                                                          color = txt,
+                                                                          fontSize = 11.sp
+                                                                      )
+                                                                  }
+                                                                  OutlinedButton(
+                                                                      onClick = { showDecoyPatternDialog = true },
+                                                                      modifier = Modifier.weight(1f).height(38.dp),
+                                                                      shape = RoundedCornerShape(10.dp)
+                                                                  ) {
+                                                                      Text(
+                                                                          text = if (AppRepo.isDecoyPatternSet()) "✓ ${s.btnSetDecoyPattern}" else s.btnSetDecoyPattern,
+                                                                          color = txt,
+                                                                          fontSize = 11.sp
+                                                                      )
+                                                                  }
+                                                              }
                                                           }
                                                       }
                                                       item {
@@ -4563,6 +5391,23 @@ jobs:
                                                                       }
                                                                   }
                                                               }
+                                                              // Whenever a non-immediate delay (2, 4, 6, 10 min) is chosen, show the "Lock Immediately on Screen Off" option!
+                                                              AnimatedVisibility(visible = relockMinutes > 0) {
+                                                                  Column {
+                                                                      HorizontalDivider(color = border, modifier = Modifier.padding(vertical = 8.dp))
+                                                                      SettingsToggleRow(
+                                                                          title = s.lockOnScreenOffTitle,
+                                                                          subtitle = s.lockOnScreenOffSub,
+                                                                          checked = lockOnScreenOff,
+                                                                          txtColor = txt,
+                                                                          subColor = sub,
+                                                                          onCheckedChange = { enabled ->
+                                                                              lockOnScreenOff = enabled
+                                                                              AppRepo.setLockOnScreenOffEnabled(enabled)
+                                                                          }
+                                                                      )
+                                                                  }
+                                                              }
                                                           }
                                                       }
                                                       item {
@@ -4574,12 +5419,13 @@ jobs:
                                                           ) {
                                                               Row(
                                                                   modifier = Modifier.fillMaxWidth(),
-                                                                  horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                                                  horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                                                  verticalAlignment = Alignment.CenterVertically
                                                               ) {
+                                                                  // Card 1 & Card 2: Padlock vs Calculator Icon Style
                                                                   listOf(
                                                                       Triple(AppIconMode.PADLOCK, R.drawable.ic_nowlock_logo, s.iconPadlock),
-                                                                      Triple(AppIconMode.CALCULATOR, R.drawable.ic_nowlock_calculator, s.iconCalculator),
-                                                                      Triple(AppIconMode.HIDDEN, R.drawable.ic_qs_lock_tile, s.iconHidden)
+                                                                      Triple(AppIconMode.CALCULATOR, R.drawable.ic_nowlock_calculator, s.iconCalculator)
                                                                   ).forEach { (modeItem, resId, titleStr) ->
                                                                       val sel = iconMode == modeItem
                                                                       Surface(
@@ -4588,6 +5434,7 @@ jobs:
                                                                           border = BorderStroke(if (sel) 1.5.dp else 1.dp, if (sel) blue else border),
                                                                           modifier = Modifier
                                                                               .weight(1f)
+                                                                              .height(82.dp)
                                                                               .clickable {
                                                                                   iconMode = modeItem
                                                                                   AppRepo.setIconMode(this@MainActivity, modeItem)
@@ -4595,7 +5442,7 @@ jobs:
                                                                               }
                                                                       ) {
                                                                           Column(
-                                                                              modifier = Modifier.padding(horizontal = 6.dp, vertical = 10.dp),
+                                                                              modifier = Modifier.fillMaxSize().padding(horizontal = 6.dp, vertical = 8.dp),
                                                                               horizontalAlignment = Alignment.CenterHorizontally,
                                                                               verticalArrangement = Arrangement.Center
                                                                           ) {
@@ -4608,10 +5455,62 @@ jobs:
                                                                               Text(
                                                                                   titleStr,
                                                                                   color = txt,
-                                                                                  fontSize = 10.5.sp,
+                                                                                  fontSize = 11.sp,
                                                                                   fontWeight = FontWeight.SemiBold,
                                                                                   textAlign = TextAlign.Center,
-                                                                                  maxLines = 2
+                                                                                  maxLines = 1
+                                                                              )
+                                                                          }
+                                                                      }
+                                                                  }
+                                                                  // Card 3: Independent ON/OFF Toggle for Hiding App Icon from Launcher (No icon inside card; text pulled up to align with the other two cards!)
+                                                                  Surface(
+                                                                      shape = RoundedCornerShape(14.dp),
+                                                                      color = if (isLauncherHidden) Color(0x2210B981) else Color.Transparent,
+                                                                      border = BorderStroke(
+                                                                          if (isLauncherHidden) 1.5.dp else 1.dp,
+                                                                          if (isLauncherHidden) Color(0xFF10B981) else border
+                                                                      ),
+                                                                      modifier = Modifier
+                                                                          .weight(1f)
+                                                                          .height(82.dp)
+                                                                          .clickable {
+                                                                              val nextHidden = !isLauncherHidden
+                                                                              isLauncherHidden = nextHidden
+                                                                              AppRepo.setLauncherHidden(this@MainActivity, nextHidden)
+                                                                              Toast.makeText(
+                                                                                  this@MainActivity,
+                                                                                  "${s.iconHidden}: ${if (nextHidden) s.activeLabel else s.inactiveLabel}",
+                                                                                  Toast.LENGTH_SHORT
+                                                                              ).show()
+                                                                          }
+                                                                  ) {
+                                                                      Column(
+                                                                          modifier = Modifier
+                                                                              .fillMaxSize()
+                                                                              .padding(horizontal = 6.dp, vertical = 8.dp),
+                                                                          horizontalAlignment = Alignment.CenterHorizontally,
+                                                                          verticalArrangement = Arrangement.SpaceBetween
+                                                                      ) {
+                                                                          Text(
+                                                                              text = s.iconHidden,
+                                                                              color = txt,
+                                                                              fontSize = 10.5.sp,
+                                                                              fontWeight = FontWeight.Bold,
+                                                                              textAlign = TextAlign.Center,
+                                                                              lineHeight = 13.5.sp,
+                                                                              maxLines = 2
+                                                                          )
+                                                                          Surface(
+                                                                              shape = RoundedCornerShape(50),
+                                                                              color = if (isLauncherHidden) Color(0xFF10B981) else border
+                                                                          ) {
+                                                                              Text(
+                                                                                  text = if (isLauncherHidden) s.activeLabel else s.inactiveLabel,
+                                                                                  color = if (isLauncherHidden) Color.White else sub,
+                                                                                  fontSize = 10.sp,
+                                                                                  fontWeight = FontWeight.Bold,
+                                                                                  modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp)
                                                                               )
                                                                           }
                                                                       }
@@ -4744,9 +5643,9 @@ jobs:
                                                                       }
                                                                   }
                                                               }
-                                                              Spacer(Modifier.height(10.dp))
-                                                              Text(s.selectLangLabel, color = sub, fontSize = 11.sp)
-                                                              Spacer(Modifier.height(6.dp))
+                                                              HorizontalDivider(color = border, modifier = Modifier.padding(vertical = 10.dp))
+                                                              Text(s.selectLangLabel, color = txt, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                                              Spacer(Modifier.height(8.dp))
                                                               Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
                                                                   listOf(AppLang.FA, AppLang.EN, AppLang.AZ).forEach { langItem ->
                                                                       val sel = appLang == langItem
@@ -4786,6 +5685,261 @@ jobs:
                                                       }
                                                   }
                                               }
+                                              NowLockNavTab.REPORT -> {
+                                                  // Auto-clear read security logs once the user has viewed the Security Report tab and switches away!
+                                                  DisposableEffect(Unit) {
+                                                      onDispose {
+                                                          if (securityLogs.isNotEmpty()) {
+                                                              AppRepo.clearSecurityLogs()
+                                                          }
+                                                      }
+                                                  }
+                                                  val isDangerRed = !isEngineReady || !passwordSetState
+                                                  val isWarningYellow = !isDangerRed && (securityLogs.isNotEmpty() || AppRepo.getConsecutiveFailedAttempts() > 0)
+                                                  val topEmblemTitle = when {
+                                                      isDangerRed -> s.repDangerTitle
+                                                      isWarningYellow -> s.repWarningTitle
+                                                      else -> s.repSafeTitle
+                                                  }
+                                                  val topEmblemSub = when {
+                                                      isDangerRed -> s.repDangerSub
+                                                      isWarningYellow -> s.repWarningSub
+                                                      else -> s.repSafeSub
+                                                  }
+                                                  LazyColumn(
+                                                      modifier = Modifier.widthIn(max = screenMetrics.contentMaxWidthDp.dp).fillMaxSize().padding(horizontal = 16.dp),
+                                                      verticalArrangement = Arrangement.spacedBy(12.dp),
+                                                      contentPadding = PaddingValues(top = 14.dp, bottom = navBarBottomInset + 36.dp)
+                                                  ) {
+                                                      // 1. Animated Top Security Emblem (Red Danger <-> Yellow Exclamation <-> Emerald Safe)
+                                                      item {
+                                                          AnimatedSecurityReportEmblem(
+                                                              isDangerRed = isDangerRed,
+                                                              isWarningYellow = isWarningYellow,
+                                                              titleText = topEmblemTitle,
+                                                              subtitleText = topEmblemSub,
+                                                              cardColor = card,
+                                                              borderColor = border,
+                                                              txtColor = txt,
+                                                              subColor = sub
+                                                          )
+                                                      }
+                                                      // 2. Open 4-Permission Active Guard Section (Moved here from Apps tab, always open and visible!)
+                                                      item {
+                                                          val grantedCount = listOf(hasAccPerm, hasUsagePerm, hasOverlayPerm, hasCamPerm).count { it }
+                                                          MinimalSectionCard(
+                                                              title = "${if (isEngineReady) s.statusActive else s.statusNeedsPerm} ($grantedCount/4)",
+                                                              cardColor = card,
+                                                              borderColor = if (isEngineReady) Color(0x5510B981) else Color(0x88EF4444),
+                                                              txtColor = txt
+                                                          ) {
+                                                              Text(
+                                                                  text = s.permBannerTitle,
+                                                                  color = sub,
+                                                                  fontSize = 11.5.sp,
+                                                                  lineHeight = 17.sp
+                                                              )
+                                                              Spacer(Modifier.height(10.dp))
+                                                              if (!hasAccPerm || !hasUsagePerm) {
+                                                                  Button(
+                                                                      onClick = {
+                                                                          Toast.makeText(this@MainActivity, s.permRestrictedToast, Toast.LENGTH_LONG).show()
+                                                                          openDirectAppDetailsSettings(this@MainActivity)
+                                                                      },
+                                                                      modifier = Modifier.fillMaxWidth(),
+                                                                      colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD97706)),
+                                                                      shape = RoundedCornerShape(11.dp)
+                                                                  ) {
+                                                                      Text(
+                                                                          text = s.permRestrictedBtn,
+                                                                          fontSize = 11.sp,
+                                                                          fontWeight = FontWeight.Bold,
+                                                                          color = Color.White,
+                                                                          textAlign = TextAlign.Center
+                                                                      )
+                                                                  }
+                                                                  Spacer(Modifier.height(8.dp))
+                                                              }
+                                                              val permRows: List<Triple<String, Boolean, () -> Unit>> = listOf(
+                                                                  Triple(s.perm1Acc, hasAccPerm, { openDirectAccessibilitySettings(this@MainActivity) }),
+                                                                  Triple(s.perm2Usage, hasUsagePerm, { openDirectUsageAccessSettings(this@MainActivity) }),
+                                                                  Triple(s.perm3Overlay, hasOverlayPerm, { openDirectOverlaySettings(this@MainActivity) }),
+                                                                  Triple(s.perm4Camera, hasCamPerm, { requestCameraPermissionSafely() })
+                                                              )
+                                                              Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                                                                  permRows.take(2).forEach { item ->
+                                                                      Button(
+                                                                          onClick = item.third,
+                                                                          modifier = Modifier.weight(1f).height(42.dp),
+                                                                          colors = ButtonDefaults.buttonColors(
+                                                                              containerColor = if (item.second) Color(0xFF10B981) else Color(0xFFEF4444)
+                                                                          ),
+                                                                          shape = RoundedCornerShape(11.dp)
+                                                                      ) {
+                                                                          Text(
+                                                                              text = if (item.second) "✓ ${item.first}" else "✕ ${item.first}",
+                                                                              fontSize = 11.sp,
+                                                                              fontWeight = FontWeight.Bold,
+                                                                              color = Color.White
+                                                                          )
+                                                                      }
+                                                                  }
+                                                              }
+                                                              Spacer(Modifier.height(8.dp))
+                                                              Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                                                                  permRows.drop(2).forEach { item ->
+                                                                      Button(
+                                                                          onClick = item.third,
+                                                                          modifier = Modifier.weight(1f).height(42.dp),
+                                                                          colors = ButtonDefaults.buttonColors(
+                                                                              containerColor = if (item.second) Color(0xFF10B981) else Color(0xFFEF4444)
+                                                                          ),
+                                                                          shape = RoundedCornerShape(11.dp)
+                                                                      ) {
+                                                                          Text(
+                                                                              text = if (item.second) "✓ ${item.first}" else "✕ ${item.first}",
+                                                                              fontSize = 11.sp,
+                                                                              fontWeight = FontWeight.Bold,
+                                                                              color = Color.White
+                                                                          )
+                                                                      }
+                                                                  }
+                                                              }
+                                                          }
+                                                      }
+                                                      // 3. Live Diagnostics Card (Are permissions disabled? Is the lock service stopped?)
+                                                      item {
+                                                          MinimalSectionCard(
+                                                              title = s.repAuditTitle,
+                                                              cardColor = card,
+                                                              borderColor = border,
+                                                              txtColor = txt
+                                                          ) {
+                                                              Row(
+                                                                  modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                                                                  horizontalArrangement = Arrangement.SpaceBetween,
+                                                                  verticalAlignment = Alignment.CenterVertically
+                                                              ) {
+                                                                  Text(s.repQPermsDisabled, color = txt, fontSize = 12.sp, modifier = Modifier.weight(1f))
+                                                                  Text(
+                                                                      text = if (isEngineReady) s.repAnsNoAllActive else s.repAnsYesDisabled,
+                                                                      color = if (isEngineReady) Color(0xFF10B981) else Color(0xFFEF4444),
+                                                                      fontSize = 11.5.sp,
+                                                                      fontWeight = FontWeight.Bold
+                                                                  )
+                                                              }
+                                                              HorizontalDivider(color = border)
+                                                              Row(
+                                                                  modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                                                                  horizontalArrangement = Arrangement.SpaceBetween,
+                                                                  verticalAlignment = Alignment.CenterVertically
+                                                              ) {
+                                                                  Text(s.repQServiceStopped, color = txt, fontSize = 12.sp, modifier = Modifier.weight(1f))
+                                                                  val serviceRunning = hasAccPerm || hasUsagePerm
+                                                                  Text(
+                                                                      text = if (serviceRunning) s.repAnsNoRunning else s.repAnsYesStopped,
+                                                                      color = if (serviceRunning) Color(0xFF10B981) else Color(0xFFEF4444),
+                                                                      fontSize = 11.5.sp,
+                                                                      fontWeight = FontWeight.Bold
+                                                                  )
+                                                              }
+                                                          }
+                                                      }
+                                                      // 4. Smart Failed Unlock Attempts Report (Count, When Occurred, Target App, Auto-Cleared once read)
+                                                      item {
+                                                          MinimalSectionCard(
+                                                              title = s.repLogsTitle,
+                                                              cardColor = card,
+                                                              borderColor = border,
+                                                              txtColor = txt
+                                                          ) {
+                                                              Row(
+                                                                  modifier = Modifier.fillMaxWidth(),
+                                                                  horizontalArrangement = Arrangement.SpaceBetween,
+                                                                  verticalAlignment = Alignment.CenterVertically
+                                                              ) {
+                                                                  Text(s.repFailedCountLabel, color = txt, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
+                                                                  Surface(
+                                                                      shape = RoundedCornerShape(50),
+                                                                      color = if (securityLogs.isEmpty()) Color(0x2210B981) else Color(0x22F59E0B)
+                                                                  ) {
+                                                                      Text(
+                                                                          text = "${securityLogs.size}",
+                                                                          color = if (securityLogs.isEmpty()) Color(0xFF10B981) else Color(0xFFF59E0B),
+                                                                          fontSize = 12.sp,
+                                                                          fontWeight = FontWeight.Bold,
+                                                                          modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+                                                                      )
+                                                                  }
+                                                              }
+                                                              Spacer(Modifier.height(10.dp))
+                                                              if (securityLogs.isEmpty()) {
+                                                                  Text(
+                                                                      text = s.repNoLogsMsg,
+                                                                      color = sub,
+                                                                      fontSize = 12.sp,
+                                                                      modifier = Modifier.padding(vertical = 6.dp)
+                                                                  )
+                                                              } else {
+                                                                  Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                                      securityLogs.forEach { entry ->
+                                                                          Surface(
+                                                                              shape = RoundedCornerShape(12.dp),
+                                                                              color = Color(0x18F59E0B),
+                                                                              border = BorderStroke(1.dp, Color(0x44F59E0B)),
+                                                                              modifier = Modifier.fillMaxWidth()
+                                                                          ) {
+                                                                              Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                                                  Row(
+                                                                                      modifier = Modifier.fillMaxWidth(),
+                                                                                      horizontalArrangement = Arrangement.SpaceBetween
+                                                                                  ) {
+                                                                                      Text(
+                                                                                          text = "${s.repTargetAppLabel} ${entry.targetAppLabel}",
+                                                                                          color = txt,
+                                                                                          fontSize = 12.sp,
+                                                                                          fontWeight = FontWeight.Bold
+                                                                                      )
+                                                                                      Text(
+                                                                                          text = "${s.repMethodLabel} ${entry.method}",
+                                                                                          color = Color(0xFFF59E0B),
+                                                                                          fontSize = 11.sp,
+                                                                                          fontWeight = FontWeight.SemiBold
+                                                                                      )
+                                                                                  }
+                                                                                  Text(
+                                                                                      text = "${s.repTimeLabel} ${entry.timestamp}",
+                                                                                      color = sub,
+                                                                                      fontSize = 11.sp
+                                                                                  )
+                                                                              }
+                                                                          }
+                                                                      }
+                                                                      Spacer(Modifier.height(4.dp))
+                                                                      Text(
+                                                                          text = s.repAutoClearNote,
+                                                                          color = sub,
+                                                                          fontSize = 10.5.sp,
+                                                                          lineHeight = 15.sp
+                                                                      )
+                                                                      Button(
+                                                                          onClick = {
+                                                                              AppRepo.clearSecurityLogs()
+                                                                              AppRepo.resetFailedAttempts()
+                                                                              securityLogs = emptyList()
+                                                                          },
+                                                                          modifier = Modifier.fillMaxWidth(),
+                                                                          shape = RoundedCornerShape(11.dp),
+                                                                          colors = ButtonDefaults.buttonColors(containerColor = blue)
+                                                                      ) {
+                                                                          Text(s.repClearNowBtn, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                                                      }
+                                                                  }
+                                                              }
+                                                          }
+                                                      }
+                                                  }
+                                              }
                                               NowLockNavTab.ABOUT -> {
                                                   LazyColumn(
                                                       modifier = Modifier.widthIn(max = screenMetrics.contentMaxWidthDp.dp).fillMaxSize().padding(horizontal = 16.dp),
@@ -4812,7 +5966,7 @@ jobs:
                                                                   )
                                                                   Spacer(Modifier.height(12.dp))
                                                                   AnimatedRgbBrandText(
-                                                                      text = "NowLock v8.3",
+                                                                      text = "NowLock v9.0",
                                                                       fontSize = 25.sp
                                                                   )
                                                                   Text(
@@ -4991,6 +6145,7 @@ jobs:
                                           (!AppRepo.isPinSet() && AppRepo.isPatternSet())
                                       val canFp = fpEnabled && canUseFingerprint(this@MainActivity)
                                       var selfEnteredPin by remember { mutableStateOf("") }
+                                      var selfShowingFakeCrash by remember { mutableStateOf(false) }
                                       var selfCooldownSec by remember { mutableStateOf(AppRepo.getLockoutRemainingSeconds()) }
                                       val defaultPrompt = if (usePattern) s.lockPromptPattern else s.lockPromptPin
                                       var selfStatusMsg by remember(appLang, usePattern) {
@@ -5067,9 +6222,10 @@ jobs:
                                               onPatternAttempt = { patternStr, resetPatternCallback ->
                                                   val rem = AppRepo.getLockoutRemainingSeconds()
                                                   val isCorrect = AppRepo.verifyPattern(patternStr)
+                                                  val isDecoy = AppRepo.verifyDecoyPattern(patternStr)
                                                   if (rem > 0) {
                                                       selfCooldownSec = rem
-                                                      if (!isCorrect) {
+                                                      if (!isCorrect && !isDecoy) {
                                                           onSelfWrongAttempt()
                                                       } else {
                                                           selfIsError = true
@@ -5082,6 +6238,9 @@ jobs:
                                                       }
                                                   } else if (isCorrect) {
                                                       onSelfUnlockSuccess()
+                                                  } else if (isDecoy) {
+                                                      resetPatternCallback()
+                                                      selfShowingFakeCrash = true
                                                   } else {
                                                       onSelfWrongAttempt()
                                                       scope.launch {
@@ -5101,9 +6260,10 @@ jobs:
                                                       if (selfEnteredPin.length == 4) {
                                                           val rem = AppRepo.getLockoutRemainingSeconds()
                                                           val isCorrect = AppRepo.verifyPin(selfEnteredPin)
+                                                          val isDecoy = AppRepo.verifyDecoyPin(selfEnteredPin)
                                                           if (rem > 0) {
                                                               selfCooldownSec = rem
-                                                              if (!isCorrect) {
+                                                              if (!isCorrect && !isDecoy) {
                                                                   onSelfWrongAttempt()
                                                               } else {
                                                                   selfIsError = true
@@ -5116,6 +6276,9 @@ jobs:
                                                               }
                                                           } else if (isCorrect) {
                                                               onSelfUnlockSuccess()
+                                                          } else if (isDecoy) {
+                                                              selfEnteredPin = ""
+                                                              selfShowingFakeCrash = true
                                                           } else {
                                                               onSelfWrongAttempt()
                                                               scope.launch {
@@ -5143,6 +6306,13 @@ jobs:
                                               },
                                               onExitClick = { finish() }
                                           )
+                                          if (selfShowingFakeCrash) {
+                                              FakeAndroidSystemCrashOverlay(
+                                                  targetPkg = packageName,
+                                                  s = s,
+                                                  onCloseApp = { finish() }
+                                              )
+                                          }
                                       }
                                   }
                                   // Recents Privacy Padlock Cover when paused in background switcher
@@ -5213,6 +6383,32 @@ jobs:
                                               pendingLockPkg = null
                                               showPatternDialog = false
                                               NowLockMonitorService.startServiceSafely(this@MainActivity)
+                                          }
+                                      )
+                                  }
+                                  if (showDecoyPinDialog) {
+                                      PinSetupDialog(
+                                          s = s,
+                                          isDecoySetup = true,
+                                          onDismiss = { showDecoyPinDialog = false },
+                                          onSavePin = { decoyPin ->
+                                              AppRepo.setDecoyPin(decoyPin)
+                                              decoyEnabled = true
+                                              showDecoyPinDialog = false
+                                              Toast.makeText(this@MainActivity, "✓ ${s.btnSetDecoyPin}", Toast.LENGTH_SHORT).show()
+                                          }
+                                      )
+                                  }
+                                  if (showDecoyPatternDialog) {
+                                      PatternSetupDialog(
+                                          s = s,
+                                          isDecoySetup = true,
+                                          onDismiss = { showDecoyPatternDialog = false },
+                                          onSavePattern = { decoyPat ->
+                                              AppRepo.setDecoyPattern(decoyPat)
+                                              decoyEnabled = true
+                                              showDecoyPatternDialog = false
+                                              Toast.makeText(this@MainActivity, "✓ ${s.btnSetDecoyPattern}", Toast.LENGTH_SHORT).show()
                                           }
                                       )
                                   }
@@ -5385,11 +6581,12 @@ jobs:
           @Composable
           fun PinSetupDialog(
               s: UiStrings,
+              isDecoySetup: Boolean = false,
               onDismiss: () -> Unit,
               onSavePin: (String) -> Unit
           ) {
               val context = LocalContext.current
-              val hasOldPin = remember { AppRepo.isPinSet() }
+              val hasOldPin = remember { if (isDecoySetup) AppRepo.isPinSet() else AppRepo.isPinSet() }
               // step 0 = verify old PIN, step 1 = enter new PIN, step 2 = confirm new PIN
               var step by remember { mutableStateOf(if (hasOldPin) 0 else 1) }
               var pinInput by remember { mutableStateOf("") }
@@ -5420,10 +6617,16 @@ jobs:
                           }
                       }
                       1 -> {
-                          firstNewPin = pinInput
-                          errorMsg = null
-                          pinInput = ""
-                          step = 2
+                          if (isDecoySetup && AppRepo.verifyPin(pinInput)) {
+                              AppRepo.triggerShortVibration(context, 60L)
+                              errorMsg = s.dlgMismatchError
+                              pinInput = ""
+                          } else {
+                              firstNewPin = pinInput
+                              errorMsg = null
+                              pinInput = ""
+                              step = 2
+                          }
                       }
                       2 -> {
                           if (pinInput == firstNewPin) {
@@ -5532,11 +6735,12 @@ jobs:
           @Composable
           fun PatternSetupDialog(
               s: UiStrings,
+              isDecoySetup: Boolean = false,
               onDismiss: () -> Unit,
               onSavePattern: (String) -> Unit
           ) {
               val context = LocalContext.current
-              val hasOldPattern = remember { AppRepo.isPatternSet() }
+              val hasOldPattern = remember { if (isDecoySetup) AppRepo.isPatternSet() else AppRepo.isPatternSet() }
               var step by remember { mutableStateOf(if (hasOldPattern) 0 else 1) }
               val selectedNodes = remember { mutableStateListOf<Int>() }
               var firstNewPattern by remember { mutableStateOf("") }
@@ -5589,11 +6793,18 @@ jobs:
                           }
                       }
                       1 -> {
-                          firstNewPattern = patStr
-                          errorMsg = null
-                          selectedNodes.clear()
-                          currentTouchPos = null
-                          step = 2
+                          if (isDecoySetup && AppRepo.verifyPattern(patStr)) {
+                              AppRepo.triggerShortVibration(context, 60L)
+                              errorMsg = s.dlgMismatchError
+                              selectedNodes.clear()
+                              currentTouchPos = null
+                          } else {
+                              firstNewPattern = patStr
+                              errorMsg = null
+                              selectedNodes.clear()
+                              currentTouchPos = null
+                              step = 2
+                          }
                       }
                       2 -> {
                           if (patStr == firstNewPattern) {
@@ -5731,11 +6942,12 @@ jobs:
 
           ''')
           print("NowLock v7.5 project generated cleanly!")
-      - name: Compile Optimized Release APK with JDK 17 & Gradle 8.7
+      - name: Compile Optimized Release APK with JDK 17, Android 16 (API 36) & Gradle 8.7
         run: |
           export JAVA_HOME="${JAVA_HOME_17_X64:-/usr/lib/jvm/temurin-17-jdk-amd64}"
           export PATH="$JAVA_HOME/bin:$PATH"
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null 2>&1 || true
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-36" "platforms;android-35" > /dev/null 2>&1 || true
           if [ ! -f /tmp/gradle-8.7/bin/gradle ]; then
             curl -sL https://services.gradle.org/distributions/gradle-8.7-bin.zip -o /tmp/gradle-8.7.zip
             unzip -q -o /tmp/gradle-8.7.zip -d /tmp
@@ -5746,9 +6958,11 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release delete v8.3-nowlock --repo "${{ github.repository }}" --cleanup-tag --yes 2>/dev/null || true
-          gh release create v8.3-nowlock NowLock.apk --repo "${{ github.repository }}" --target "${{ github.sha }}" --title "NowLock v8.3 - Custom Lock Tile Icon & Theme-Adaptive Dynamic Frosted Glass" --notes "## What's New in NowLock v8.3
-          - **Custom 'Lock' Control Center Tile Icon**: Replaced the solid-background drawable with a dedicated 24dp monochrome transparent-background vector icon spelling 'Lock' that fits cleanly inside the circular Quick Settings tile across all Android OEMs.
-          - **Theme-Adaptive Dynamic Frosted Glass Lock Screen**: Automatically extracts and randomly arranges vibrant color combinations from the locked app's icon in Light Theme, darkens that exact color palette in Dark Theme, and increases orbital motion contrast so the flowing color clouds are clearly visible behind the frosted glass.
-          - **Clean Edge-to-Edge Lock Screen**: Removed the top and bottom translucent fade overlays from the lock screen so they only appear inside the main NowLock application interface."
+          gh release delete v9.0-nowlock --repo "${{ github.repository }}" --cleanup-tag --yes 2>/dev/null || true
+          gh release create v9.0-nowlock NowLock.apk --repo "${{ github.repository }}" --target "${{ github.sha }}" --title "NowLock v9.0 - Smart Security Report, Per-App Config, Fake Crash Decoy & Android 16 (API 36)" --notes "## What's New in NowLock v9.0
+          - **Android 16 (API Level 36) Target SDK**: Updated targetSdk to API 36 in compliance with Google Play's August 31, 2026 requirement.
+          - **Smart Security Report Tab**: Added a dedicated Security Report tab between Settings and About featuring an animated status emblem (morphing smoothly between Red Danger when permissions/services are inactive and Yellow Exclamation when failed unlock attempts occur), open permission controls, live service diagnostics, and auto-clearing failed attempt logs.
+          - **Per-App Expandable Lock Settings**: Added an expandable configuration drawer on every app row in the Apps list, defaulting to Global Settings while allowing custom per-app overrides for Lock Mode, Fingerprint, Relock Delay, Screen-Off Relock, Intruder Selfie, Vibration, and Fake Crash Decoy.
+          - **Fake Crash Decoy Mode**: Added support for a Decoy PIN and Decoy Pattern that opens a realistic Android System crash dialog displaying the locked app's real icon and name instead of unlocking the app.
+          - **True Launcher Icon Stealth Hiding**: Configured MainActivity as non-exported so disabling the launcher aliases hides the icon completely across all Android 10–16 launchers, controlled by an independent ON/OFF card."
 
